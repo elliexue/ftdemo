@@ -441,6 +441,7 @@ type PlotLifeState = {
   needsFertilizer: boolean;
   fertilizerCooldown: number;
   giantBloom: boolean;
+  rainbowBloom: boolean;
   matureProgress: number;
   matureClusterReady: boolean;
   transitionPulse: number; // 过渡脉冲动画（0-1）
@@ -473,6 +474,15 @@ const getSharedPlantToonMaterial = (color: number): THREE.MeshToonMaterial => {
     sharedPlantToonMaterials.set(color, mat);
   }
   return mat;
+};
+
+const mixColors = (from: THREE.Color, to: THREE.Color, t: number): THREE.Color =>
+  from.clone().lerp(to, t);
+
+const makeRainbowBloomPalette = (seed: SeedId): THREE.Color[] => {
+  const base = new THREE.Color(SEED_CONFIG[seed].color);
+  const accents = [0xff8fbd, 0xffc58e, 0xffef95, 0x9be7cf, 0x9fcbff, 0xc8a3ff];
+  return accents.map((hex) => mixColors(new THREE.Color(hex), base, 0.22));
 };
 
 const isSharedPlantGeometry = (geometry: THREE.BufferGeometry): boolean =>
@@ -1136,6 +1146,7 @@ const ZONE_STORAGE_KEY = 'ft_garden_custom_zones_v2';
 const LEGACY_ZONE_STORAGE_KEYS = ['ft_garden_custom_zones_v1'];
 const SWING_ZONE_CLEANUP_ONCE_KEY = 'ft_garden_swing_zone_cleanup_v2_done';
 const ROLLBACK_LATEST_ZONE_ONCE_KEY = 'ft_garden_rollback_latest_zone_once_v1_done';
+const ZONE_CREATE_COST = 50; // 每次创建种植区域消耗50金币
 
 function loadSavedZones(): SavedZone[] {
   try {
@@ -2286,8 +2297,11 @@ function bootstrap(): void {
   helpMask.addEventListener('click', () => setHelpVisible(false));
   helpClose.addEventListener('click', () => setHelpVisible(false));
 
+  // 种植区域创建消耗常量
+  const ZONE_CREATE_COST = 50; // 每次创建种植区域消耗50金币
+
   const seedState: ShowcaseSeedState = {
-    gold: 220,
+    gold: 0,
     selectedSeed: SEED_IDS[0]!,
     seeds: Object.fromEntries(SEED_IDS.map((id) => [id, 10])) as Record<SeedId, number>,
   };
@@ -2333,6 +2347,15 @@ function bootstrap(): void {
   seedValue.style.minWidth = '24px';
   quickHud.appendChild(seedValue);
 
+  const zoneCostValue = document.createElement('span');
+  zoneCostValue.style.padding = '2px 8px';
+  zoneCostValue.style.borderRadius = '999px';
+  zoneCostValue.style.border = '1px solid rgba(255, 235, 184, 0.24)';
+  zoneCostValue.style.background = 'rgba(255, 244, 214, 0.12)';
+  zoneCostValue.style.color = '#ffe49e';
+  zoneCostValue.style.fontWeight = '700';
+  quickHud.appendChild(zoneCostValue);
+
   const shopBtn = document.createElement('button');
   const shopIcon = document.createElement('img');
   shopIcon.src = makeShopIconDataUrl();
@@ -2362,6 +2385,36 @@ function bootstrap(): void {
   shopBtn.style.zIndex = '15';
   shopBtn.append(shopIcon, shopLabel);
   document.body.appendChild(shopBtn);
+
+  const createZoneBtn = document.createElement('button');
+  createZoneBtn.type = 'button';
+  createZoneBtn.style.position = 'fixed';
+  createZoneBtn.style.left = '96px';
+  createZoneBtn.style.top = '78px';
+  createZoneBtn.style.minWidth = '164px';
+  createZoneBtn.style.padding = '10px 12px';
+  createZoneBtn.style.display = 'flex';
+  createZoneBtn.style.flexDirection = 'column';
+  createZoneBtn.style.alignItems = 'flex-start';
+  createZoneBtn.style.gap = '4px';
+  createZoneBtn.style.border = '1px solid rgba(255, 220, 138, 0.5)';
+  createZoneBtn.style.background = 'linear-gradient(180deg, rgba(124,92,38,0.96), rgba(83,58,20,0.96))';
+  createZoneBtn.style.borderRadius = '14px';
+  createZoneBtn.style.color = '#fff6de';
+  createZoneBtn.style.boxShadow = '0 10px 18px rgba(46, 30, 8, 0.28)';
+  createZoneBtn.style.cursor = 'pointer';
+  createZoneBtn.style.zIndex = '15';
+  const createZoneTitle = document.createElement('span');
+  createZoneTitle.style.font = '700 13px/1.1 "Segoe UI","PingFang SC",sans-serif';
+  createZoneTitle.textContent = '创建种植区域';
+  const createZoneCostLabel = document.createElement('span');
+  createZoneCostLabel.style.font = '700 12px/1 "Segoe UI","PingFang SC",sans-serif';
+  createZoneCostLabel.style.padding = '3px 8px';
+  createZoneCostLabel.style.borderRadius = '999px';
+  createZoneCostLabel.style.background = 'rgba(255, 244, 214, 0.14)';
+  createZoneCostLabel.style.border = '1px solid rgba(255, 235, 184, 0.25)';
+  createZoneBtn.append(createZoneTitle, createZoneCostLabel);
+  document.body.appendChild(createZoneBtn);
 
   const shopMask = document.createElement('div');
   shopMask.style.position = 'fixed';
@@ -2581,6 +2634,7 @@ function bootstrap(): void {
     seedIcon.src = cfg.icon;
     seedIcon.alt = cfg.label;
     seedValue.textContent = `${seedState.seeds[seedState.selectedSeed]}`;
+    zoneCostValue.textContent = `建区 ${getNextZoneCreateCost() === 0 ? '首次免费' : `${getNextZoneCreateCost()} 金币`}`;
   };
 
   const plotEffects: PlotFx[] = [];
@@ -2591,12 +2645,15 @@ function bootstrap(): void {
   const GROW_RATE = 0.11;
   const FERTILIZE_WAIT = 6.5;
   const GIANT_CHANCE = 0.42;
+  const RAINBOW_BLOOM_CHANCE = 0.22;
+  const GIANT_RAINBOW_BLOOM_CHANCE = 0.16;
 
   const getLife = (cell: THREE.Mesh): PlotLifeState | null => {
     const life = (cell.userData.life as PlotLifeState | undefined) ?? null;
     if (!life) return null;
     if (typeof life.matureProgress !== 'number') life.matureProgress = life.stage === 4 ? 1 : 0;
     if (typeof life.matureClusterReady !== 'boolean') life.matureClusterReady = life.stage === 4;
+    if (typeof life.rainbowBloom !== 'boolean') life.rainbowBloom = false;
     return life;
   };
 
@@ -2621,6 +2678,41 @@ function bootstrap(): void {
       for (const m of mats) m?.dispose();
     });
     cell.userData.promptFx = null;
+  };
+
+  const prepareRainbowBloomVisual = (visual: THREE.Group, seed: SeedId): void => {
+    visual.userData.rainbowPalette = makeRainbowBloomPalette(seed);
+    visual.userData.rainbowOffset = Math.random() * 10;
+    visual.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh) && !(obj instanceof THREE.InstancedMesh)) return;
+      if (!obj.userData.rainbowRole) return;
+      const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+      const cloned = materials.map((material) => (material instanceof THREE.MeshToonMaterial ? material.clone() : material));
+      obj.material = Array.isArray(obj.material) ? cloned : cloned[0]!;
+    });
+  };
+
+  const updateRainbowBloomVisual = (visual: THREE.Group, phase: number): void => {
+    const palette = visual.userData.rainbowPalette as THREE.Color[] | undefined;
+    const offset = (visual.userData.rainbowOffset as number | undefined) ?? 0;
+    if (!palette || palette.length < 2) return;
+    const cycle = phase * 0.28 + offset;
+    const cursor = ((cycle % palette.length) + palette.length) % palette.length;
+    const index = Math.floor(cursor);
+    const nextIndex = (index + 1) % palette.length;
+    const blend = cursor - index;
+    const easedBlend = blend * blend * (3 - 2 * blend);
+    const color = mixColors(palette[index]!, palette[nextIndex]!, easedBlend);
+    visual.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh) && !(obj instanceof THREE.InstancedMesh)) return;
+      const role = obj.userData.rainbowRole as 'center' | 'petal' | undefined;
+      if (!role) return;
+      const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+      for (const material of materials) {
+        if (!(material instanceof THREE.MeshToonMaterial)) continue;
+        material.color.copy(role === 'center' ? mixColors(color, new THREE.Color(0xffffff), 0.18) : color);
+      }
+    });
   };
 
   type SeedVisualProfile = {
@@ -2749,6 +2841,7 @@ function bootstrap(): void {
     const core = new THREE.Mesh(sharedPlantGeometries.sphere, getSharedPlantToonMaterial(cfg.centerColor));
     core.scale.setScalar(0.08);
     core.position.y = 0;
+    core.userData.rainbowRole = 'center';
     g.add(core);
 
     const petals = new THREE.InstancedMesh(
@@ -2756,6 +2849,7 @@ function bootstrap(): void {
       getSharedPlantToonMaterial(baseColor),
       cfg.petalCount,
     );
+    petals.userData.rainbowRole = 'petal';
     const dummy = new THREE.Object3D();
     for (let i = 0; i < cfg.petalCount; i++) {
       const a = (i / cfg.petalCount) * Math.PI * 2;
@@ -2926,6 +3020,7 @@ function bootstrap(): void {
     gardenRoot.add(visual);
     disableRealtimeShadows(visual);
     freezeStaticTransforms(visual);
+    if (life.rainbowBloom) prepareRainbowBloomVisual(visual, life.seedId);
     cell.userData.flower = visual;
 
     if ((life.stage === 1 && life.needsWater) || (life.stage === 2 && life.needsWater)) {
@@ -3109,6 +3204,7 @@ function bootstrap(): void {
               child.scale.setScalar(1);
             }
           }
+          if (life.rainbowBloom) updateRainbowBloomVisual(flower, phase);
         } else {
           // 成熟中：根据进度逐渐绽放 + 显示更多分支
           const p = life.matureProgress;
@@ -3142,6 +3238,41 @@ function bootstrap(): void {
     if (drawState.fill) scene.remove(drawState.fill);
     drawState.fill = null;
     drawState.points = [];
+  };
+
+  const getNextZoneCreateCost = (): number => (savedZones.length === 0 ? 0 : ZONE_CREATE_COST);
+
+  const exitDrawMode = (shouldClear = true): void => {
+    drawState.enabled = false;
+    controls.enabled = true;
+    if (shouldClear) clearDraw();
+    updateDrawBtnCost();
+  };
+
+  const enterDrawMode = (): void => {
+    const zoneCost = getNextZoneCreateCost();
+    if (seedState.gold < zoneCost) {
+      showToast(`金币不足！创建种植区域需要 ${zoneCost} 金币`);
+      return;
+    }
+    drawState.enabled = true;
+    controls.enabled = false;
+    showToast(zoneCost > 0 ? `开始画区，本次会消耗 ${zoneCost} 金币` : '开始画区，首次创建免费');
+    updateDrawBtnCost();
+  };
+
+  const toggleCreateZoneMode = (): void => {
+    if (!drawState.enabled) {
+      enterDrawMode();
+      return;
+    }
+    if (drawState.points.length >= 3) {
+      commitDraw();
+      return;
+    }
+    exitDrawMode(true);
+    showToast('已取消创建种植区域');
+    updateDrawBtnCost();
   };
 
   const refreshSeedDock = (): void => {
@@ -3191,7 +3322,10 @@ function bootstrap(): void {
     }
     if (stage === 4) {
       if (!life.matureClusterReady) return `成熟中：${Math.round(life.matureProgress * 100)}%`;
-      return life.giantBloom ? '巨花开花了：现在收获！' : '开花了：现在收获！';
+      if (life.giantBloom && life.rainbowBloom) return '超大炫彩花开花了：现在收获！';
+      if (life.giantBloom) return '巨花开花了：现在收获！';
+      if (life.rainbowBloom) return '炫彩花开花了：现在收获！';
+      return '开花了：现在收获！';
     }
     return `生长中：${Math.round(life.growProgress * 100)}%`;
   };
@@ -3202,6 +3336,7 @@ function bootstrap(): void {
       syncPlotCellVisibility(cell);
       refreshSeedDock();
       updateQuickHud();
+      updateDrawBtnCost();
       for (const seedId of SEED_IDS) {
         const ownedLabel = shopOwnedLabels.get(seedId);
         if (ownedLabel) ownedLabel.textContent = `库存 ${seedState.seeds[seedId]}`;
@@ -3234,6 +3369,7 @@ function bootstrap(): void {
         needsFertilizer: false,
         fertilizerCooldown: 0,
         giantBloom: false,
+        rainbowBloom: false,
         matureProgress: 0,
         matureClusterReady: false,
         transitionPulse: 0,
@@ -3292,12 +3428,28 @@ function bootstrap(): void {
       life.stage = 4;
       life.needsFertilizer = false;
       life.fertilizerCooldown = 0;
-      life.giantBloom = Math.random() < GIANT_CHANCE;
+      const variantRoll = Math.random();
+      const comboBloom = variantRoll < GIANT_RAINBOW_BLOOM_CHANCE;
+      const giantBloom = !comboBloom && variantRoll < GIANT_RAINBOW_BLOOM_CHANCE + GIANT_CHANCE;
+      const rainbowBloom =
+        !comboBloom
+        && !giantBloom
+        && variantRoll < GIANT_RAINBOW_BLOOM_CHANCE + GIANT_CHANCE + RAINBOW_BLOOM_CHANCE;
+      life.giantBloom = comboBloom || giantBloom;
+      life.rainbowBloom = comboBloom || rainbowBloom;
       life.matureProgress = 0;
       life.matureClusterReady = false;
       enqueuePlotVisualRefresh(cell);
       spawnPlotFx(cell, 'fertilize');
-      showToast(life.giantBloom ? '已施肥，触发了巨花！' : '已施肥，进入阶段4');
+      showToast(
+        life.giantBloom && life.rainbowBloom
+          ? '已施肥，触发了超大炫彩花！'
+          : life.giantBloom
+            ? '已施肥，触发了巨花！'
+            : life.rainbowBloom
+              ? '已施肥，触发了炫彩花！'
+              : '已施肥，进入阶段4',
+      );
       finalize();
       return;
     }
@@ -3462,6 +3614,7 @@ function bootstrap(): void {
       seedState.selectedSeed = id;
       refreshSeedDock();
       updateQuickHud();
+      updateDrawBtnCost();
     });
     seedButtons.set(id, item);
     seedBadges.set(id, badge);
@@ -3537,11 +3690,25 @@ function bootstrap(): void {
   };
   sowModeBtn.addEventListener('click', () => setSowMode(!sowMode));
   shopBtn.addEventListener('click', () => setShopVisible(true));
+  createZoneBtn.addEventListener('click', () => toggleCreateZoneMode());
   shopMask.addEventListener('click', () => setShopVisible(false));
   shopClose.addEventListener('click', () => setShopVisible(false));
 
   refreshSeedDock();
   updateQuickHud();
+  const updateDrawBtnCost = (): void => {
+    const zoneCost = getNextZoneCreateCost();
+    const zoneCostText = zoneCost === 0 ? '首次免费' : `${zoneCost} 金币`;
+    createZoneCostLabel.textContent = drawState.enabled ? '点击地面开始画区' : `本次 ${zoneCostText}`;
+    createZoneTitle.textContent = drawState.enabled ? '完成后按 Enter 确认' : '创建种植区域';
+    createZoneBtn.style.borderColor = drawState.enabled ? 'rgba(173, 233, 198, 0.56)' : 'rgba(255, 220, 138, 0.5)';
+    createZoneBtn.style.background = drawState.enabled
+      ? 'linear-gradient(180deg, rgba(60,112,78,0.96), rgba(36,74,51,0.96))'
+      : 'linear-gradient(180deg, rgba(124,92,38,0.96), rgba(83,58,20,0.96))';
+    createZoneBtn.style.opacity = !drawState.enabled && seedState.gold < zoneCost ? '0.72' : '1';
+    zoneCostValue.textContent = `建区 ${zoneCostText}`;
+  };
+  updateDrawBtnCost();
 
   const rebuildPreview = (): void => {
     if (drawState.line) scene.remove(drawState.line);
@@ -3573,6 +3740,20 @@ function bootstrap(): void {
 
   const commitDraw = (): void => {
     if (drawState.points.length < 3) return;
+
+    // 检查金币是否足够（首次创建免费）
+    const zoneCost = savedZones.length === 0 ? 0 : ZONE_CREATE_COST;
+    if (seedState.gold < zoneCost) {
+      showToast(`金币不足！创建种植区域需要 ${ZONE_CREATE_COST} 金币`);
+      return;
+    }
+
+    // 扣除金币
+    if (zoneCost > 0) {
+      seedState.gold -= zoneCost;
+      updateQuickHud();
+    }
+
     const colorPool = [0xffd3e4, 0xffe9b9, 0xdaf0ff, 0xffc9da];
     const color = colorPool[Math.floor(Math.random() * colorPool.length)]!;
     const polygon = [...drawState.points].map(toGardenLocal);
@@ -3587,7 +3768,10 @@ function bootstrap(): void {
     collectPlotCells();
     setSowMode(true);  // 绘制完成后自动进入种植模式
     requestShadowRefresh();
-    clearDraw();
+    exitDrawMode(true);
+    showToast(zoneCost > 0 ? `创建成功！-${zoneCost}金币` : '首次免费创建！');
+    updateQuickHud();
+    updateDrawBtnCost();
   };
 
   renderer.domElement.addEventListener('click', (ev) => {
@@ -3698,14 +3882,13 @@ function bootstrap(): void {
       return;
     }
     if (ev.key.toLowerCase() === 'g') {
-      drawState.enabled = !drawState.enabled;
-      controls.enabled = !drawState.enabled;
-      if (!drawState.enabled) clearDraw();
+      if (drawState.enabled) exitDrawMode(true);
+      else enterDrawMode();
       return;
     }
     if (!drawState.enabled) return;
     if (ev.key === 'Escape') {
-      clearDraw();
+      exitDrawMode(true);
       return;
     }
     if (ev.key === 'Backspace') {

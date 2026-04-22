@@ -1,10 +1,18 @@
-import { gameState, notifyGameState, type BouquetItem, type GameState, type GardenView } from './GameState';
+import {
+  createEmptyPlotRuntime,
+  gameState,
+  INITIAL_SELF_PLOTS,
+  MAX_SELF_PLOTS,
+  notifyGameState,
+  type BouquetItem,
+  type GameState,
+  type GardenView,
+} from './GameState';
 import type { PlantStage, SeedId, WeatherId } from '../modules/garden/types';
 import { SEED_IDS } from '../modules/garden/types';
 import { initFriendGarden } from '../modules/social/socialMock';
 
 const STORAGE_KEY = 'fthtml-yws-save-v1';
-const PLOT_COUNT = 20;
 const SAVE_DB_NAME = 'fthtml-save-db';
 const SAVE_STORE_NAME = 'state';
 
@@ -39,22 +47,6 @@ function isWeatherId(x: unknown): x is WeatherId {
 
 function isPlantStage(x: unknown): x is PlantStage {
   return typeof x === 'number' && x >= 0 && x <= 4 && Number.isInteger(x);
-}
-
-function defaultPlot(): GameState['plots'][0] {
-  return {
-    seedId: null,
-    stage: 0,
-    growProgress: 0,
-    waterSaturation: 0,
-    needsWater: false,
-    needsFertilizer: false,
-    fertilizerCooldown: 0,
-    waterFxTime: 0,
-    fertilizerFxTime: 0,
-    giantBloom: false,
-    blessBonus: 0,
-  };
 }
 
 function parsePlot(raw: unknown): GameState['plots'][0] | null {
@@ -194,9 +186,10 @@ function applyPersistedData(data: unknown): boolean {
   if (!Array.isArray(o.plots) || o.plots.length < 1) return false;
   const rawPlots = o.plots as unknown[];
   const plots: GameState['plots'] = [];
-  for (let i = 0; i < PLOT_COUNT; i++) {
+  const plotCount = Math.min(MAX_SELF_PLOTS, Math.max(INITIAL_SELF_PLOTS, rawPlots.length));
+  for (let i = 0; i < plotCount; i++) {
     const p = i < rawPlots.length ? parsePlot(rawPlots[i]) : null;
-    plots.push(p ?? defaultPlot());
+    plots.push(p ?? createEmptyPlotRuntime());
   }
 
   if (!Array.isArray(o.flowers)) return false;
@@ -365,7 +358,7 @@ export function resetGameToDefault(): void {
   gameState.seeds = defaultSeedStock();
   gameState.flowers = [];
   gameState.bouquets = [];
-  gameState.plots = Array.from({ length: PLOT_COUNT }, () => defaultPlot());
+  gameState.plots = Array.from({ length: INITIAL_SELF_PLOTS }, () => createEmptyPlotRuntime());
   gameState.viewGarden = 'self';
   gameState.selectedSeed = 'tulip';
   gameState.selectedArrangementSeed = null;

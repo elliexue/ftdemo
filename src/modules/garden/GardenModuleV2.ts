@@ -113,6 +113,8 @@ export class GardenModuleV2 implements IModule {
     this.chaser.init(scene);
     void this.chaser.loadSoldierModel();
     this.player = scene.getObjectByName('Player') ?? null;
+    syncGardenPlotVisuals(this.selfHandles, gameState.plots, this.player?.position);
+    syncGardenPlotVisuals(this.friendHandles, gameState.friendPlots, this.player?.position);
   }
 
   update(delta: number): void {

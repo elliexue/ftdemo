@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { gameState, notifyGameState, subscribeGameState } from '../../game/GameState';
+import { gameState, MAX_SELF_PLOTS, notifyGameState, subscribeGameState } from '../../game/GameState';
 import { resetGameToDefault } from '../../game/saveLocal';
+import { getNextGardenExpansionCost, GARDEN_EXPANSION_COST, tryCreateGardenPlot } from '../garden/GardenExpansion';
 import { weatherLabel } from '../garden/GardenWeather';
 import { SEED_CONFIG, SEED_IDS, type SeedId } from '../garden/types';
 import { STEAL_SUCCESS_RATE_V2 as STEAL_SUCCESS_RATE } from '../social/socialStealV2';
@@ -59,6 +60,9 @@ export class UiModuleV2 implements IModule {
         #game-hud h3 { margin: 0 0 6px; font-size: 13px; color: #8fb6ff; }
         #game-hud h4 { margin: 0 0 6px; font-size: 12px; color: #9ec5ff; font-weight: 600; }
         #hud-quick-actions button { margin: 2px 6px 2px 0; padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,.12); background: #1f2630; color: #e6edf3; cursor: pointer; }
+        #hud-quick-actions .garden-expand-btn { background: linear-gradient(180deg, #87621d 0%, #5b4112 100%); border-color: rgba(255,214,122,.55); color: #fff4d6; font-weight: 700; }
+        #hud-quick-actions .garden-expand-btn:disabled { background: rgba(98,82,45,.4); color: rgba(255,244,214,.58); cursor: not-allowed; }
+        #hud-quick-actions .price-pill { display: inline-flex; align-items: center; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: rgba(255,214,122,.14); border: 1px solid rgba(255,214,122,.28); color: #ffd97a; font-size: 11px; font-weight: 700; }
         #game-hud button { margin: 2px 4px 2px 0; padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,.12); background: #1f2630; color: #e6edf3; cursor: pointer; }
         #game-hud .row { margin: 4px 0; }
         #game-hud .hint { font-size: 12px; opacity: .78; }
@@ -114,6 +118,7 @@ export class UiModuleV2 implements IModule {
       if (action === 'buy' && seed) buySeed(seed);
       if (action === 'sell-flowers') sellAllFlowersFromInventory();
       if (action === 'sell-bouquets') sellAllBouquetsFromInventory();
+      if (action === 'expand-garden') tryCreateGardenPlot();
       if (action === 'shelf-left') this.nudgeShelf(-220);
       if (action === 'shelf-right') this.nudgeShelf(220);
       if (action === 'pick-seed' && seed) gameState.selectedSeed = seed;
@@ -170,6 +175,16 @@ export class UiModuleV2 implements IModule {
     const weatherStr = weatherLabel(gameState.weather);
     const seedHotkeys = SEED_IDS.map((id, i) => `${i === 9 ? '0' : i + 1}=${SEED_CONFIG[id].label}`).join(' / ');
     const stealPct = Math.round(STEAL_SUCCESS_RATE * 100);
+    const nextExpansionCost = getNextGardenExpansionCost();
+    const expansionLabel =
+      nextExpansionCost === null ? '已满' : nextExpansionCost === 0 ? '免费' : `${nextExpansionCost} 金币`;
+    const expandDisabled = nextExpansionCost === null || nextExpansionCost > gameState.gold;
+    const expansionHint =
+      nextExpansionCost === null
+        ? `种植区域已全部开放（${gameState.plots.length}/${MAX_SELF_PLOTS}）`
+        : nextExpansionCost === 0
+          ? `首次创建种植区域免费，当前已开放 ${gameState.plots.length}/${MAX_SELF_PLOTS}`
+          : `当前创建会消耗 ${nextExpansionCost} 金币，之后每次固定 ${GARDEN_EXPANSION_COST} 金币`;
 
     const shelfItems = seedIds.map((seedId) => {
       const cfg = SEED_CONFIG[seedId];
@@ -204,6 +219,7 @@ export class UiModuleV2 implements IModule {
     status.innerHTML = `
       <h3>状态</h3>
       <div class="row">金币：<b>${gameState.gold}</b> ｜ 天气：<b>${weatherStr}</b></div>
+      <div class="row">种植区域：<b>${gameState.plots.length}</b> / <b>${MAX_SELF_PLOTS}</b> ｜ 本次扩建：<b>${expansionLabel}</b></div>
       <div class="row hint">地图：中央自家花田，西侧邻居花田（偷花成功率 ${stealPct}%）</div>
       <div class="row">当前选种：<b>${sel}</b> ｜ 快捷键：<span class="hint">${seedHotkeys}</span> ｜ <b>B</b> 商店</div>
     `;
@@ -221,9 +237,12 @@ export class UiModuleV2 implements IModule {
     quick.innerHTML = `
       <h4>操作与存档</h4>
       <div>
+        <button type="button" class="garden-expand-btn" data-action="expand-garden" ${expandDisabled ? 'disabled' : ''}>创建种植区域</button>
+        <span class="price-pill">本次 ${expansionLabel}</span>
         <button type="button" data-action="open-shop">打开商店</button>
         <button type="button" data-action="clear-save">清除本地存档</button>
       </div>
+      <div class="hint">${expansionHint}</div>
       <div class="hint">走近地图东侧插花角可打开插花面板；数字键或底栏选种。</div>
     `;
 

@@ -2,6 +2,8 @@
 import type { PlotRuntime, SeedId, WeatherId } from '../modules/garden/types';
 
 export type GardenView = 'self' | 'friend';
+export const MAX_SELF_PLOTS = 20;
+export const INITIAL_SELF_PLOTS = 5;
 export interface BouquetItem {
   id: string;
   label: string;
@@ -42,7 +44,7 @@ const defaultSeedStock = (): Record<SeedId, number> => ({
   rosette: 10,
 });
 
-const emptyPlot = (): PlotRuntime => ({
+export const createEmptyPlotRuntime = (): PlotRuntime => ({
   seedId: null,
   stage: 0,
   growProgress: 0,
@@ -61,7 +63,7 @@ export const gameState: GameState = {
   seeds: defaultSeedStock(),
   flowers: [],
   bouquets: [],
-  plots: Array.from({ length: 20 }, () => emptyPlot()),
+  plots: Array.from({ length: INITIAL_SELF_PLOTS }, () => createEmptyPlotRuntime()),
   friendPlots: [],
   viewGarden: 'self',
   selectedSeed: 'tulip',

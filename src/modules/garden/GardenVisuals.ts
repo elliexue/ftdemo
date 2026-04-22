@@ -31,7 +31,7 @@ export function syncGardenPlotVisuals(
   const t = performance.now() * 0.001;
 
   for (let i = 0; i < handles.length; i++) {
-    const { plant } = handles[i];
+    const { root, plant } = handles[i];
     const plot = plots[i];
     const stem = plant.userData.stem as THREE.Mesh | undefined;
     const head = plant.userData.head as THREE.Mesh | undefined;
@@ -42,6 +42,8 @@ export function syncGardenPlotVisuals(
     const giantAura = plant.userData.giantAura as THREE.Group | undefined;
     const actionPrompt = plant.userData.actionPrompt as THREE.Sprite | undefined;
     if (!stem || !head) continue;
+
+    root.visible = Boolean(plot);
 
     if (!plot || plot.stage === 0) {
       plant.visible = false;
