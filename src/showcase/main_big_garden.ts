@@ -454,6 +454,20 @@ type PlotFx = {
   kind: 'water' | 'fertilize' | 'mature';
 };
 
+type FlowerSpiritCareAction = 'water' | 'fertilize';
+type FlowerSpiritTask = {
+  cell: THREE.Mesh;
+  kind: FlowerSpiritCareAction;
+};
+type FlowerSpiritRig = {
+  root: THREE.Group;
+  body: THREE.Group;
+  head: THREE.Group;
+  leftWing: THREE.Mesh;
+  rightWing: THREE.Mesh;
+  skirt: THREE.Mesh;
+};
+
 const sharedPlantToonMaterials = new Map<number, THREE.MeshToonMaterial>();
 const sharedPlantGeometries = {
   box: new THREE.BoxGeometry(1, 1, 1),
@@ -2566,6 +2580,723 @@ function bootstrap(): void {
     syncPlotCellVisibility();
   };
   collectPlotCells();
+
+  const createFlowerSpiritRig = (): FlowerSpiritRig => {
+    const root = new THREE.Group();
+    root.name = 'FlowerSpiritNpc';
+
+    const bodyMat = new THREE.MeshToonMaterial({ color: 0xffd2e8 });
+    const hairMat = new THREE.MeshToonMaterial({ color: 0x7a4e6d });
+    const dressMat = new THREE.MeshToonMaterial({ color: 0xf7a9cf });
+    const accentMat = new THREE.MeshToonMaterial({ color: 0xfff0cf });
+    const wingMat = new THREE.MeshToonMaterial({
+      color: 0xffe7fb,
+      transparent: true,
+      opacity: 0.62,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+
+    const body = new THREE.Group();
+    body.position.y = 0.95;
+    root.add(body);
+
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.38, 4, 8), bodyMat);
+    torso.position.y = 0.04;
+    torso.castShadow = true;
+    body.add(torso);
+
+    const dress = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.5, 6, 1, true), dressMat);
+    dress.position.y = -0.18;
+    dress.rotation.y = Math.PI / 6;
+    dress.castShadow = true;
+    body.add(dress);
+
+    const head = new THREE.Group();
+    head.position.y = 1.42;
+    root.add(head);
+
+    const face = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 12), new THREE.MeshToonMaterial({ color: 0xffebdc }));
+    face.position.y = 0.02;
+    face.castShadow = true;
+    head.add(face);
+
+    const hair = new THREE.Mesh(new THREE.SphereGeometry(0.23, 16, 12), hairMat);
+    hair.scale.set(1.02, 0.9, 0.98);
+    hair.position.set(0, 0.08, -0.03);
+    hair.castShadow = true;
+    head.add(hair);
+
+    const fringe = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.18, 6), hairMat);
+    fringe.position.set(0, 0.1, 0.1);
+    fringe.rotation.x = Math.PI;
+    head.add(fringe);
+
+    const eyeGeo = new THREE.SphereGeometry(0.018, 8, 6);
+    const leftEye = new THREE.Mesh(eyeGeo, new THREE.MeshBasicMaterial({ color: 0x3a2641 }));
+    leftEye.position.set(-0.05, 0.02, 0.19);
+    head.add(leftEye);
+    const rightEye = new THREE.Mesh(eyeGeo, new THREE.MeshBasicMaterial({ color: 0x3a2641 }));
+    rightEye.position.set(0.05, 0.02, 0.19);
+    head.add(rightEye);
+
+    const blushGeo = new THREE.SphereGeometry(0.015, 8, 6);
+    const blushMat = new THREE.MeshBasicMaterial({ color: 0xffb8cd, transparent: true, opacity: 0.45 });
+    const blushLeft = new THREE.Mesh(blushGeo, blushMat);
+    blushLeft.position.set(-0.09, -0.03, 0.18);
+    head.add(blushLeft);
+    const blushRight = new THREE.Mesh(blushGeo, blushMat);
+    blushRight.position.set(0.09, -0.03, 0.18);
+    head.add(blushRight);
+
+    const leftWing = new THREE.Mesh(new THREE.PlaneGeometry(0.48, 0.34), wingMat);
+    leftWing.position.set(-0.2, 1.02, -0.12);
+    leftWing.rotation.y = 0.14;
+    leftWing.castShadow = false;
+    root.add(leftWing);
+
+    const rightWing = new THREE.Mesh(new THREE.PlaneGeometry(0.48, 0.34), wingMat);
+    rightWing.position.set(0.2, 1.02, -0.12);
+    rightWing.rotation.y = -0.14;
+    rightWing.scale.x = -1;
+    rightWing.castShadow = false;
+    root.add(rightWing);
+
+    const halo = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.02, 8, 20), accentMat);
+    halo.position.set(0, 1.76, 0.02);
+    halo.rotation.x = Math.PI / 2;
+    root.add(halo);
+
+    root.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.receiveShadow = false;
+      }
+    });
+
+    return { root, body, head, leftWing, rightWing, skirt: dress };
+  };
+
+  const animateFlowerSpiritRig = (rig: FlowerSpiritRig, delta: number, phase: { value: number }): void => {
+    phase.value += delta * 1.45;
+    const sway = Math.sin(phase.value * 2.1);
+    const bob = Math.sin(phase.value * 2.5) * 0.05;
+    rig.root.position.y += (bob - rig.root.position.y + 1.85) * Math.min(1, delta * 4);
+    rig.body.rotation.z += (sway * 0.03 - rig.body.rotation.z) * Math.min(1, delta * 8);
+    rig.head.rotation.y += (Math.sin(phase.value * 0.7) * 0.12 - rig.head.rotation.y) * Math.min(1, delta * 6);
+    rig.leftWing.rotation.z += ((-0.42 - sway * 0.2) - rig.leftWing.rotation.z) * Math.min(1, delta * 10);
+    rig.rightWing.rotation.z += ((0.42 + sway * 0.2) - rig.rightWing.rotation.z) * Math.min(1, delta * 10);
+  };
+
+  const flowerSpiritRig = createFlowerSpiritRig();
+  const flowerSpirit = flowerSpiritRig.root;
+  flowerSpirit.position.set(previewPlayer.position.x + 1.4, 1.85, previewPlayer.position.z + 0.9);
+  flowerSpirit.scale.setScalar(0.92);
+  scene.add(flowerSpirit);
+
+  const flowerSpiritPhase = { value: 0 };
+  const flowerSpiritBounds = {
+    minX: -playableBoundX * 0.88,
+    maxX: playableBoundX * 0.88,
+    minY: 1.45,
+    maxY: 2.95,
+    minZ: -playableBoundZ * 0.88,
+    maxZ: playableBoundZ * 0.88,
+  };
+  const flowerSpiritTarget = new THREE.Vector3().copy(flowerSpirit.position);
+  const flowerSpiritVelocity = new THREE.Vector3();
+  const flowerSpiritMoveDir = new THREE.Vector3();
+  const flowerSpiritWorldPos = new THREE.Vector3();
+  const flowerSpiritScreenPos = new THREE.Vector3();
+  const flowerSpiritCareWorld = new THREE.Vector3();
+  const flowerSpiritCareHover = new THREE.Vector3();
+  const flowerSpiritYawQuat = new THREE.Quaternion();
+  const flowerSpiritSparkles = new THREE.Group();
+  flowerSpirit.add(flowerSpiritSparkles);
+  const flowerSpiritSparkleData = Array.from({ length: 10 }, (_, index) => ({
+    angle: (index / 10) * Math.PI * 2,
+    radius: 0.28 + (index % 3) * 0.04,
+    height: 0.42 + (index % 4) * 0.06,
+    speed: 0.8 + (index % 5) * 0.12,
+    phase: index * 0.6,
+    mesh: new THREE.Mesh(
+      new THREE.SphereGeometry(0.02 + (index % 2) * 0.01, 8, 6),
+      new THREE.MeshBasicMaterial({ color: [0xfff0c8, 0xffd7f0, 0xe4ddff, 0xcff8ff][index % 4], transparent: true, opacity: 0.32 }),
+    ),
+  }));
+  for (const sparkle of flowerSpiritSparkleData) {
+    sparkle.mesh.position.set(Math.cos(sparkle.angle) * sparkle.radius, sparkle.height, Math.sin(sparkle.angle) * sparkle.radius * 0.6);
+    flowerSpiritSparkles.add(sparkle.mesh);
+  }
+
+  const flowerSpiritState = {
+    energy: 0,
+    maxEnergy: 100,
+    refillAmount: 25,
+    refillCost: 10,
+    actionCost: 1,
+    autoCareEnabled: true,
+  };
+  const flowerSpiritCareTarget = {
+    cell: null as THREE.Mesh | null,
+    kind: null as FlowerSpiritCareAction | null,
+  };
+  let flowerSpiritActionCooldown = 0;
+  let flowerSpiritCareApproachTimer = 0;
+  let flowerSpiritEmptyRetargetTimer = 0;
+  let flowerSpiritRetargetTimer = 0;
+  let flowerSpiritGreetingTimer = 0;
+  let flowerSpiritGreetingCooldown = 0;
+  const flowerSpiritGreetingMessages = ['花花交给我吧', '我来帮你照顾花花', '先让我飞过去', '花精灵正在巡护'];
+  const flowerSpiritGreetingBubble = document.createElement('div');
+  flowerSpiritGreetingBubble.style.position = 'fixed';
+  flowerSpiritGreetingBubble.style.display = 'none';
+  flowerSpiritGreetingBubble.style.zIndex = '21';
+  flowerSpiritGreetingBubble.style.pointerEvents = 'none';
+  flowerSpiritGreetingBubble.style.padding = '6px 10px';
+  flowerSpiritGreetingBubble.style.borderRadius = '999px';
+  flowerSpiritGreetingBubble.style.background = 'rgba(38, 21, 48, 0.92)';
+  flowerSpiritGreetingBubble.style.color = '#fff6fb';
+  flowerSpiritGreetingBubble.style.border = '1px solid rgba(255, 220, 245, 0.34)';
+  flowerSpiritGreetingBubble.style.font = '700 12px/1.2 "Segoe UI","PingFang SC",sans-serif';
+  document.body.appendChild(flowerSpiritGreetingBubble);
+
+  const flowerSpiritHud = document.createElement('div');
+  flowerSpiritHud.style.position = 'fixed';
+  flowerSpiritHud.style.right = '12px';
+  flowerSpiritHud.style.top = '178px';
+  flowerSpiritHud.style.width = '250px';
+  flowerSpiritHud.style.padding = '12px 12px 10px';
+  flowerSpiritHud.style.borderRadius = '16px';
+  flowerSpiritHud.style.border = '1px solid rgba(255, 214, 241, 0.36)';
+  flowerSpiritHud.style.background = 'linear-gradient(180deg, rgba(40,24,52,0.92), rgba(20,18,28,0.94))';
+  flowerSpiritHud.style.boxShadow = '0 14px 28px rgba(18, 10, 30, 0.28)';
+  flowerSpiritHud.style.color = '#fff7fb';
+  flowerSpiritHud.style.font = '12px/1.35 "Segoe UI","PingFang SC",sans-serif';
+  flowerSpiritHud.style.zIndex = '19';
+  flowerSpiritHud.style.backdropFilter = 'blur(8px)';
+  document.body.appendChild(flowerSpiritHud);
+
+  const flowerSpiritStyle = document.createElement('style');
+  flowerSpiritStyle.textContent = `
+    @keyframes flowerSpiritButtonGlow {
+      0%, 100% { box-shadow: 0 10px 18px rgba(27, 16, 4, 0.24), 0 0 0 rgba(255, 218, 122, 0); }
+      50% { box-shadow: 0 12px 24px rgba(27, 16, 4, 0.28), 0 0 18px rgba(255, 218, 122, 0.45); }
+    }
+    .flower-spirit-button-glow {
+      animation: flowerSpiritButtonGlow 1.6s ease-in-out infinite;
+    }
+  `;
+  document.head.appendChild(flowerSpiritStyle);
+
+  const flowerSpiritHudTitle = document.createElement('div');
+  flowerSpiritHudTitle.textContent = '花精灵照护';
+  flowerSpiritHudTitle.style.font = '700 13px/1.1 "Segoe UI","PingFang SC",sans-serif';
+  flowerSpiritHudTitle.style.letterSpacing = '0.4px';
+  flowerSpiritHudTitle.style.marginBottom = '8px';
+  flowerSpiritHud.appendChild(flowerSpiritHudTitle);
+
+  const flowerSpiritEnergyRow = document.createElement('div');
+  flowerSpiritEnergyRow.style.display = 'flex';
+  flowerSpiritEnergyRow.style.alignItems = 'center';
+  flowerSpiritEnergyRow.style.gap = '8px';
+  flowerSpiritEnergyRow.style.marginBottom = '6px';
+  flowerSpiritHud.appendChild(flowerSpiritEnergyRow);
+
+  const flowerSpiritEnergyLabel = document.createElement('span');
+  flowerSpiritEnergyLabel.textContent = '能量';
+  flowerSpiritEnergyLabel.style.minWidth = '36px';
+  flowerSpiritEnergyLabel.style.opacity = '0.86';
+  flowerSpiritEnergyRow.appendChild(flowerSpiritEnergyLabel);
+
+  const flowerSpiritEnergyTrack = document.createElement('div');
+  flowerSpiritEnergyTrack.style.position = 'relative';
+  flowerSpiritEnergyTrack.style.flex = '1';
+  flowerSpiritEnergyTrack.style.height = '10px';
+  flowerSpiritEnergyTrack.style.borderRadius = '999px';
+  flowerSpiritEnergyTrack.style.overflow = 'hidden';
+  flowerSpiritEnergyTrack.style.background = 'rgba(255, 255, 255, 0.08)';
+  flowerSpiritEnergyTrack.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+  flowerSpiritEnergyRow.appendChild(flowerSpiritEnergyTrack);
+
+  const flowerSpiritEnergyFill = document.createElement('div');
+  flowerSpiritEnergyFill.style.position = 'absolute';
+  flowerSpiritEnergyFill.style.inset = '0';
+  flowerSpiritEnergyFill.style.width = '0%';
+  flowerSpiritEnergyFill.style.borderRadius = '999px';
+  flowerSpiritEnergyFill.style.background = 'linear-gradient(90deg, rgba(252, 195, 231, 0.96), rgba(255, 241, 207, 0.92))';
+  flowerSpiritEnergyFill.style.boxShadow = '0 0 12px rgba(255, 205, 242, 0.32)';
+  flowerSpiritEnergyTrack.appendChild(flowerSpiritEnergyFill);
+
+  const flowerSpiritEnergyText = document.createElement('span');
+  flowerSpiritEnergyText.style.minWidth = '72px';
+  flowerSpiritEnergyText.style.textAlign = 'right';
+  flowerSpiritEnergyText.style.fontVariantNumeric = 'tabular-nums';
+  flowerSpiritEnergyRow.appendChild(flowerSpiritEnergyText);
+
+  const flowerSpiritStatus = document.createElement('div');
+  flowerSpiritStatus.style.marginBottom = '8px';
+  flowerSpiritStatus.style.color = '#f3dcff';
+  flowerSpiritStatus.style.opacity = '0.95';
+  flowerSpiritHud.appendChild(flowerSpiritStatus);
+
+  const flowerSpiritCooldownRow = document.createElement('div');
+  flowerSpiritCooldownRow.style.marginBottom = '8px';
+  flowerSpiritHud.appendChild(flowerSpiritCooldownRow);
+
+  const flowerSpiritCooldownLine = document.createElement('div');
+  flowerSpiritCooldownLine.style.display = 'flex';
+  flowerSpiritCooldownLine.style.alignItems = 'center';
+  flowerSpiritCooldownLine.style.gap = '8px';
+  flowerSpiritCooldownLine.style.marginBottom = '4px';
+  flowerSpiritCooldownRow.appendChild(flowerSpiritCooldownLine);
+
+  const flowerSpiritCooldownLabel = document.createElement('span');
+  flowerSpiritCooldownLabel.textContent = '⏳ 照护进度';
+  flowerSpiritCooldownLabel.style.minWidth = '56px';
+  flowerSpiritCooldownLabel.style.opacity = '0.86';
+  flowerSpiritCooldownLine.appendChild(flowerSpiritCooldownLabel);
+
+  const flowerSpiritCooldownTrack = document.createElement('div');
+  flowerSpiritCooldownTrack.style.position = 'relative';
+  flowerSpiritCooldownTrack.style.flex = '1';
+  flowerSpiritCooldownTrack.style.height = '8px';
+  flowerSpiritCooldownTrack.style.borderRadius = '999px';
+  flowerSpiritCooldownTrack.style.overflow = 'hidden';
+  flowerSpiritCooldownTrack.style.background = 'rgba(255, 255, 255, 0.08)';
+  flowerSpiritCooldownTrack.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+  flowerSpiritCooldownLine.appendChild(flowerSpiritCooldownTrack);
+
+  const flowerSpiritCooldownFill = document.createElement('div');
+  flowerSpiritCooldownFill.style.position = 'absolute';
+  flowerSpiritCooldownFill.style.inset = '0';
+  flowerSpiritCooldownFill.style.width = '0%';
+  flowerSpiritCooldownFill.style.borderRadius = '999px';
+  flowerSpiritCooldownFill.style.background = 'linear-gradient(90deg, rgba(180, 225, 255, 0.94), rgba(255, 219, 247, 0.9))';
+  flowerSpiritCooldownFill.style.boxShadow = '0 0 14px rgba(180, 225, 255, 0.2)';
+  flowerSpiritCooldownTrack.appendChild(flowerSpiritCooldownFill);
+
+  const flowerSpiritCooldownText = document.createElement('div');
+  flowerSpiritCooldownText.style.fontSize = '11px';
+  flowerSpiritCooldownText.style.color = 'rgba(243, 232, 255, 0.85)';
+  flowerSpiritCooldownRow.appendChild(flowerSpiritCooldownText);
+
+  const flowerSpiritCostLine = document.createElement('div');
+  flowerSpiritCostLine.style.display = 'flex';
+  flowerSpiritCostLine.style.alignItems = 'center';
+  flowerSpiritCostLine.style.justifyContent = 'space-between';
+  flowerSpiritCostLine.style.gap = '8px';
+  flowerSpiritCostLine.style.marginBottom = '8px';
+  flowerSpiritHud.appendChild(flowerSpiritCostLine);
+
+  const flowerSpiritCostTag = document.createElement('span');
+  flowerSpiritCostTag.style.padding = '3px 8px';
+  flowerSpiritCostTag.style.borderRadius = '999px';
+  flowerSpiritCostTag.style.background = 'rgba(255, 232, 186, 0.12)';
+  flowerSpiritCostTag.style.border = '1px solid rgba(255, 232, 186, 0.22)';
+  flowerSpiritCostTag.style.color = '#ffe7aa';
+  flowerSpiritCostTag.style.fontWeight = '700';
+  flowerSpiritCostLine.appendChild(flowerSpiritCostTag);
+
+  const flowerSpiritButtons = document.createElement('div');
+  flowerSpiritButtons.style.display = 'flex';
+  flowerSpiritButtons.style.gap = '8px';
+  flowerSpiritButtons.style.marginBottom = '8px';
+  flowerSpiritButtons.style.flexWrap = 'wrap';
+  flowerSpiritHud.appendChild(flowerSpiritButtons);
+
+  const flowerSpiritRefillBtn = document.createElement('button');
+  flowerSpiritRefillBtn.type = 'button';
+  flowerSpiritRefillBtn.style.flex = '1 1 0';
+  flowerSpiritRefillBtn.style.minWidth = '0';
+  flowerSpiritRefillBtn.style.padding = '12px 12px';
+  flowerSpiritRefillBtn.style.borderRadius = '14px';
+  flowerSpiritRefillBtn.style.border = '1px solid rgba(247, 225, 148, 0.52)';
+  flowerSpiritRefillBtn.style.background = 'linear-gradient(180deg, rgba(141,96,31,0.98), rgba(98,64,20,0.98))';
+  flowerSpiritRefillBtn.style.color = '#fff6dc';
+  flowerSpiritRefillBtn.style.font = '800 12px/1 "Segoe UI","PingFang SC",sans-serif';
+  flowerSpiritRefillBtn.style.cursor = 'pointer';
+  flowerSpiritRefillBtn.style.boxShadow = '0 12px 22px rgba(27, 16, 4, 0.28)';
+  flowerSpiritRefillBtn.textContent = '补充能量';
+  flowerSpiritButtons.appendChild(flowerSpiritRefillBtn);
+
+  const flowerSpiritAutoBtn = document.createElement('button');
+  flowerSpiritAutoBtn.type = 'button';
+  flowerSpiritAutoBtn.style.flex = '1 1 0';
+  flowerSpiritAutoBtn.style.minWidth = '0';
+  flowerSpiritAutoBtn.style.padding = '12px 12px';
+  flowerSpiritAutoBtn.style.borderRadius = '14px';
+  flowerSpiritAutoBtn.style.border = '1px solid rgba(183, 223, 255, 0.42)';
+  flowerSpiritAutoBtn.style.background = 'linear-gradient(180deg, rgba(48,83,120,0.96), rgba(28,50,74,0.96))';
+  flowerSpiritAutoBtn.style.color = '#ecf8ff';
+  flowerSpiritAutoBtn.style.font = '800 12px/1 "Segoe UI","PingFang SC",sans-serif';
+  flowerSpiritAutoBtn.style.cursor = 'pointer';
+  flowerSpiritAutoBtn.style.boxShadow = '0 12px 22px rgba(10, 18, 30, 0.26)';
+  flowerSpiritAutoBtn.textContent = '自动照护：开';
+  flowerSpiritButtons.appendChild(flowerSpiritAutoBtn);
+
+  const flowerSpiritHint = document.createElement('div');
+  flowerSpiritHint.style.marginTop = '8px';
+  flowerSpiritHint.style.fontSize = '11px';
+  flowerSpiritHint.style.lineHeight = '1.45';
+  flowerSpiritHint.style.color = 'rgba(247, 232, 255, 0.84)';
+  flowerSpiritHud.appendChild(flowerSpiritHint);
+
+  let updateFlowerSpiritHud = (): void => {};
+  updateFlowerSpiritHud = (): void => {
+    const ratio = flowerSpiritState.energy / flowerSpiritState.maxEnergy;
+    const energyEmpty = flowerSpiritState.energy <= 0;
+    const cooldownMax = 0.6;
+    const cooldownRatio = flowerSpiritActionCooldown > 0
+      ? 1 - Math.min(1, flowerSpiritActionCooldown / cooldownMax)
+      : 0;
+    flowerSpiritEnergyFill.style.width = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
+    flowerSpiritEnergyText.textContent = `${flowerSpiritState.energy}/${flowerSpiritState.maxEnergy}`;
+    flowerSpiritCostTag.textContent = `补能 +${flowerSpiritState.refillAmount} / ${flowerSpiritState.refillCost} 金币`;
+    flowerSpiritRefillBtn.textContent = `补充能量 -${flowerSpiritState.refillCost} 金币`;
+    flowerSpiritAutoBtn.textContent = flowerSpiritState.autoCareEnabled ? '自动照护：开' : '自动照护：停';
+    flowerSpiritRefillBtn.disabled = seedState.gold < flowerSpiritState.refillCost || flowerSpiritState.energy >= flowerSpiritState.maxEnergy;
+    flowerSpiritRefillBtn.style.opacity = flowerSpiritRefillBtn.disabled ? '0.58' : '1';
+    flowerSpiritRefillBtn.style.cursor = flowerSpiritRefillBtn.disabled ? 'not-allowed' : 'pointer';
+    flowerSpiritRefillBtn.classList.toggle('flower-spirit-button-glow', energyEmpty);
+    flowerSpiritAutoBtn.style.opacity = flowerSpiritState.autoCareEnabled ? '1' : '0.82';
+    flowerSpiritAutoBtn.style.borderColor = flowerSpiritState.autoCareEnabled ? 'rgba(183, 223, 255, 0.42)' : 'rgba(183, 223, 255, 0.24)';
+    flowerSpiritAutoBtn.style.background = flowerSpiritState.autoCareEnabled
+      ? 'linear-gradient(180deg, rgba(48,83,120,0.96), rgba(28,50,74,0.96))'
+      : 'linear-gradient(180deg, rgba(33,49,66,0.96), rgba(20,30,42,0.96))';
+    flowerSpiritAutoBtn.style.boxShadow = flowerSpiritState.autoCareEnabled
+      ? '0 12px 22px rgba(10, 18, 30, 0.26)'
+      : '0 8px 16px rgba(10, 18, 30, 0.18)';
+    flowerSpiritCooldownFill.style.width = `${Math.max(0, Math.min(1, cooldownRatio)) * 100}%`;
+    flowerSpiritCooldownText.textContent = energyEmpty
+      ? '🌸 返航中，等你补能'
+      : flowerSpiritActionCooldown > 0
+        ? `🌼 冷却 ${flowerSpiritActionCooldown.toFixed(1)}s`
+        : flowerSpiritCareTarget.cell && flowerSpiritCareTarget.kind
+          ? (flowerSpiritCareApproachTimer > 0 ? '🪽 飞向花花' : '🌷 准备照护')
+          : (flowerSpiritState.autoCareEnabled ? '🌿 巡游中' : '自动照护已暂停');
+
+    if (energyEmpty) {
+      flowerSpiritStatus.textContent = '状态：能量为空，先补充能量后才能照顾花花';
+      flowerSpiritHint.textContent = '她会先飞回你身边，等补能后再继续照顾花花。';
+      flowerSpiritStatus.style.color = '#ffd7e8';
+    } else if (flowerSpiritCareTarget.cell && flowerSpiritCareTarget.kind) {
+      const cellIndex = plotCells.indexOf(flowerSpiritCareTarget.cell);
+      flowerSpiritStatus.textContent = `状态：正在${flowerSpiritCareTarget.kind === 'water' ? '浇水' : '施肥'}第${cellIndex >= 0 ? cellIndex + 1 : '?'}块花`;
+      flowerSpiritHint.textContent = '她会先飞到花前，再一朵一朵完成照护。';
+      flowerSpiritStatus.style.color = '#f3dcff';
+    } else {
+      flowerSpiritStatus.textContent = flowerSpiritState.autoCareEnabled ? '状态：巡游中，寻找需要照护的花花' : '状态：自动照护已暂停';
+      flowerSpiritHint.textContent = flowerSpiritState.autoCareEnabled
+        ? '可以随时补充能量，让她继续帮你照顾花花。'
+        : '暂停后她只会自由飞行，不会自动照护花花。';
+      flowerSpiritStatus.style.color = '#f3dcff';
+    }
+  };
+
+  const getFlowerSpiritTaskKind = (cell: THREE.Mesh): FlowerSpiritCareAction | null => {
+    const life = getLife(cell);
+    if (!life) return null;
+    if ((life.stage === 1 || life.stage === 2) && life.needsWater) return 'water';
+    if (life.stage === 3 && life.needsFertilizer) return 'fertilize';
+    return null;
+  };
+
+  const syncAfterPlotChange = (): void => {
+    for (const cell of plotCells) {
+      syncPlotCellVisibility(cell);
+    }
+    refreshSeedDock();
+    updateQuickHud();
+    updateDrawBtnCost();
+  };
+
+  const performWaterAction = (cell: THREE.Mesh, sourceLabel: string): boolean => {
+    const life = getLife(cell);
+    if (!life) return false;
+    const cellIndex = plotCells.indexOf(cell);
+    const cellLabel = cellIndex >= 0 ? `第${cellIndex + 1}块` : '这朵花';
+    if (life.stage === 1) {
+      if (!life.needsWater) return false;
+      life.stage = 2;
+      life.growProgress = 0;
+      life.needsWater = false;
+      life.needsFertilizer = false;
+      life.fertilizerCooldown = 0;
+      enqueuePlotVisualRefresh(cell);
+      spawnPlotFx(cell, 'water');
+      showToast(`${sourceLabel}给${cellLabel}花浇水，进入阶段2`);
+      syncAfterPlotChange();
+      return true;
+    }
+    if (life.stage === 2) {
+      if (!life.needsWater) return false;
+      life.stage = 3;
+      life.growProgress = 0;
+      life.needsWater = false;
+      life.needsFertilizer = false;
+      life.fertilizerCooldown = 0;
+      enqueuePlotVisualRefresh(cell);
+      spawnPlotFx(cell, 'water');
+      showToast(`${sourceLabel}给${cellLabel}花浇水，进入阶段3`);
+      syncAfterPlotChange();
+      return true;
+    }
+    return false;
+  };
+
+  const performFertilizeAction = (cell: THREE.Mesh, sourceLabel: string): boolean => {
+    const life = getLife(cell);
+    if (!life || life.stage !== 3 || !life.needsFertilizer || life.fertilizerCooldown > 0) return false;
+    const cellIndex = plotCells.indexOf(cell);
+    const cellLabel = cellIndex >= 0 ? `第${cellIndex + 1}块` : '这朵花';
+    life.stage = 4;
+    life.needsFertilizer = false;
+    life.fertilizerCooldown = 0;
+    const variantRoll = Math.random();
+    const comboBloom = variantRoll < GIANT_RAINBOW_BLOOM_CHANCE;
+    const giantBloom = !comboBloom && variantRoll < GIANT_RAINBOW_BLOOM_CHANCE + GIANT_CHANCE;
+    const rainbowBloom = comboBloom || (!giantBloom && variantRoll < GIANT_RAINBOW_BLOOM_CHANCE + GIANT_CHANCE + RAINBOW_BLOOM_CHANCE);
+    life.giantBloom = giantBloom || comboBloom;
+    life.rainbowBloom = rainbowBloom;
+    life.matureProgress = 0;
+    life.matureClusterReady = false;
+    enqueuePlotVisualRefresh(cell);
+    spawnPlotFx(cell, 'fertilize');
+    showToast(
+      life.giantBloom && life.rainbowBloom
+        ? `${sourceLabel}给${cellLabel}花施肥，触发了超大炫彩花！`
+        : life.giantBloom
+          ? `${sourceLabel}给${cellLabel}花施肥，触发了巨花！`
+          : life.rainbowBloom
+            ? `${sourceLabel}给${cellLabel}花施肥，触发了炫彩花！`
+            : `${sourceLabel}给${cellLabel}花施肥，进入阶段4`,
+    );
+    syncAfterPlotChange();
+    return true;
+  };
+
+  const findFlowerSpiritTask = (): FlowerSpiritTask | null => {
+    let bestCell: THREE.Mesh | null = null;
+    let bestKind: FlowerSpiritCareAction | null = null;
+    let bestDistSq = Number.POSITIVE_INFINITY;
+    for (const cell of plotCells) {
+      const kind = getFlowerSpiritTaskKind(cell);
+      if (!kind) continue;
+      cell.getWorldPosition(flowerSpiritCareWorld);
+      const distSq = flowerSpiritCareWorld.distanceToSquared(flowerSpirit.position);
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq;
+        bestCell = cell;
+        bestKind = kind;
+      }
+    }
+    return bestCell && bestKind ? { cell: bestCell, kind: bestKind } : null;
+  };
+
+  const retargetFlowerSpirit = (): void => {
+    flowerSpiritTarget.set(
+      THREE.MathUtils.randFloat(flowerSpiritBounds.minX * 0.45, flowerSpiritBounds.maxX * 0.45),
+      THREE.MathUtils.randFloat(flowerSpiritBounds.minY + 0.16, flowerSpiritBounds.minY + 0.7),
+      THREE.MathUtils.randFloat(flowerSpiritBounds.minZ * 0.45, flowerSpiritBounds.maxZ * 0.45),
+    );
+    flowerSpiritRetargetTimer = THREE.MathUtils.randFloat(1.2, 2.8);
+  };
+
+  retargetFlowerSpirit();
+
+  flowerSpiritRefillBtn.addEventListener('click', () => {
+    if (flowerSpiritState.energy >= flowerSpiritState.maxEnergy) {
+      showToast('花精灵能量已经满了');
+      return;
+    }
+    if (seedState.gold < flowerSpiritState.refillCost) {
+      showToast('金币不足，不能补充花精灵能量');
+      return;
+    }
+    seedState.gold -= flowerSpiritState.refillCost;
+    flowerSpiritState.energy = Math.min(flowerSpiritState.maxEnergy, flowerSpiritState.energy + flowerSpiritState.refillAmount);
+    flowerSpiritEmptyRetargetTimer = 0;
+    updateQuickHud();
+    updateFlowerSpiritHud();
+    showToast(`花精灵补充了 ${flowerSpiritState.refillAmount} 点能量，消耗 ${flowerSpiritState.refillCost} 金币`);
+  });
+
+  flowerSpiritAutoBtn.addEventListener('click', () => {
+    flowerSpiritState.autoCareEnabled = !flowerSpiritState.autoCareEnabled;
+    flowerSpiritCareTarget.cell = null;
+    flowerSpiritCareTarget.kind = null;
+    flowerSpiritCareApproachTimer = 0;
+    flowerSpiritRetargetTimer = 0;
+    updateFlowerSpiritHud();
+    showToast(flowerSpiritState.autoCareEnabled ? '花精灵自动照护已开启' : '花精灵自动照护已暂停');
+  });
+
+  const updateFlowerSpirit = (delta: number): void => {
+    flowerSpiritActionCooldown = Math.max(0, flowerSpiritActionCooldown - delta);
+    flowerSpiritGreetingCooldown = Math.max(0, flowerSpiritGreetingCooldown - delta);
+
+    const currentTaskKind = flowerSpiritCareTarget.cell ? getFlowerSpiritTaskKind(flowerSpiritCareTarget.cell) : null;
+    if (flowerSpiritState.energy <= 0) {
+      flowerSpiritCareTarget.cell = null;
+      flowerSpiritCareTarget.kind = null;
+      flowerSpiritCareApproachTimer = 0;
+      flowerSpiritEmptyRetargetTimer = Math.max(0, flowerSpiritEmptyRetargetTimer - delta);
+      if (flowerSpiritEmptyRetargetTimer <= 0) {
+        flowerSpiritCareHover.set(
+          previewPlayer.position.x + (Math.random() - 0.5) * 1.2,
+          previewPlayer.position.y + 1.58 + Math.random() * 0.35,
+          previewPlayer.position.z + (Math.random() - 0.5) * 1.1,
+        );
+        flowerSpiritTarget.copy(flowerSpiritCareHover);
+        flowerSpiritEmptyRetargetTimer = 1.2;
+      }
+    } else if (!flowerSpiritState.autoCareEnabled) {
+      flowerSpiritCareTarget.cell = null;
+      flowerSpiritCareTarget.kind = null;
+      flowerSpiritCareApproachTimer = 0;
+    } else if (!flowerSpiritCareTarget.cell || !currentTaskKind) {
+      const nextTask = findFlowerSpiritTask();
+      if (nextTask) {
+        flowerSpiritCareTarget.cell = nextTask.cell;
+        flowerSpiritCareTarget.kind = nextTask.kind;
+        flowerSpiritCareApproachTimer = 0.25;
+      }
+    } else if (flowerSpiritCareTarget.kind !== currentTaskKind) {
+      flowerSpiritCareTarget.kind = currentTaskKind;
+      flowerSpiritCareApproachTimer = 0.25;
+    }
+
+    const careActive = !!flowerSpiritCareTarget.cell && !!flowerSpiritCareTarget.kind && flowerSpiritState.energy > 0;
+    if (careActive && flowerSpiritCareTarget.cell) {
+      flowerSpiritCareTarget.cell.getWorldPosition(flowerSpiritCareWorld);
+      flowerSpiritTarget.copy(flowerSpiritCareWorld);
+      flowerSpiritTarget.y += 1.52;
+      flowerSpiritRetargetTimer = 0.2;
+    } else if (flowerSpiritState.energy > 0) {
+      flowerSpiritRetargetTimer -= delta;
+      flowerSpiritMoveDir.copy(flowerSpiritTarget).sub(flowerSpirit.position);
+      const roamDist = flowerSpiritMoveDir.length();
+      if (roamDist < 0.44 || flowerSpiritRetargetTimer <= 0) {
+        retargetFlowerSpirit();
+        flowerSpiritMoveDir.copy(flowerSpiritTarget).sub(flowerSpirit.position);
+      }
+    }
+
+    flowerSpiritMoveDir.copy(flowerSpiritTarget).sub(flowerSpirit.position);
+    const dist = flowerSpiritMoveDir.length();
+    const speed = careActive
+      ? (flowerSpiritCareApproachTimer > 0 ? 0.72 : 1.95)
+      : 1.4 + Math.sin(flowerSpiritPhase.value * 1.9) * 0.18;
+    if (flowerSpiritMoveDir.lengthSq() > 1e-8) {
+      flowerSpiritMoveDir.normalize();
+      flowerSpiritVelocity.lerp(flowerSpiritMoveDir.multiplyScalar(speed), Math.min(1, delta * (careActive ? 2.6 : 1.9)));
+    }
+
+    flowerSpirit.position.addScaledVector(flowerSpiritVelocity, delta);
+    flowerSpirit.position.x = THREE.MathUtils.clamp(flowerSpirit.position.x, flowerSpiritBounds.minX, flowerSpiritBounds.maxX);
+    flowerSpirit.position.z = THREE.MathUtils.clamp(flowerSpirit.position.z, flowerSpiritBounds.minZ, flowerSpiritBounds.maxZ);
+    const bob = Math.sin(flowerSpiritPhase.value * 2.4) * 0.12 + Math.sin(flowerSpiritPhase.value * 0.72) * 0.05;
+    const targetY = THREE.MathUtils.clamp(flowerSpiritTarget.y + bob, flowerSpiritBounds.minY, flowerSpiritBounds.maxY);
+    flowerSpirit.position.y += (targetY - flowerSpirit.position.y) * Math.min(1, delta * 2.6);
+
+    if (!careActive && flowerSpiritState.energy > 0) {
+      if (flowerSpirit.position.x <= flowerSpiritBounds.minX + 0.08 || flowerSpirit.position.x >= flowerSpiritBounds.maxX - 0.08) {
+        flowerSpiritVelocity.x *= -0.3;
+        retargetFlowerSpirit();
+      }
+      if (flowerSpirit.position.z <= flowerSpiritBounds.minZ + 0.08 || flowerSpirit.position.z >= flowerSpiritBounds.maxZ - 0.08) {
+        flowerSpiritVelocity.z *= -0.3;
+        retargetFlowerSpirit();
+      }
+    }
+
+    const planarSpeed = Math.hypot(flowerSpiritVelocity.x, flowerSpiritVelocity.z);
+    if (planarSpeed > 1e-4) {
+      const targetYaw = Math.atan2(flowerSpiritVelocity.x, flowerSpiritVelocity.z);
+      flowerSpiritYawQuat.setFromAxisAngle(worldUp, targetYaw);
+      flowerSpirit.quaternion.slerp(flowerSpiritYawQuat, 1 - Math.exp(-8 * delta));
+    }
+
+    if (careActive && flowerSpiritCareTarget.cell && flowerSpiritCareTarget.kind) {
+      if (dist < 0.92) {
+        flowerSpiritCareApproachTimer = Math.max(0, flowerSpiritCareApproachTimer - delta);
+      } else {
+        flowerSpiritCareApproachTimer = 0.25;
+      }
+    }
+
+    if (careActive && flowerSpiritCareTarget.cell && flowerSpiritCareTarget.kind && dist < 0.92 && flowerSpiritCareApproachTimer <= 0 && flowerSpiritActionCooldown <= 0) {
+      const performed = flowerSpiritCareTarget.kind === 'water'
+        ? performWaterAction(flowerSpiritCareTarget.cell, '花精灵')
+        : performFertilizeAction(flowerSpiritCareTarget.cell, '花精灵');
+      if (performed) {
+        flowerSpiritState.energy = Math.max(0, flowerSpiritState.energy - flowerSpiritState.actionCost);
+        flowerSpiritActionCooldown = 0.6;
+        flowerSpiritCareTarget.cell = null;
+        flowerSpiritCareTarget.kind = null;
+        flowerSpiritCareApproachTimer = 0;
+        flowerSpiritRetargetTimer = 0;
+        syncAfterPlotChange();
+        if (flowerSpiritState.energy <= 0) {
+          showToast('花精灵能量耗尽了，需要补充能量', 'background');
+        }
+      } else {
+        flowerSpiritCareTarget.cell = null;
+        flowerSpiritCareTarget.kind = null;
+        flowerSpiritCareApproachTimer = 0;
+        flowerSpiritRetargetTimer = 0;
+      }
+    }
+
+    flowerSpirit.getWorldPosition(flowerSpiritWorldPos);
+    flowerSpiritWorldPos.y += 1.2;
+    flowerSpiritScreenPos.copy(flowerSpiritWorldPos).project(camera);
+    const bubbleInFront = flowerSpiritScreenPos.z > -1 && flowerSpiritScreenPos.z < 1;
+    const bubbleOnScreen = bubbleInFront && Math.abs(flowerSpiritScreenPos.x) <= 1.04 && Math.abs(flowerSpiritScreenPos.y) <= 1.04;
+    const closeToPlayer = flowerSpirit.position.distanceTo(previewPlayer.position) < 4.8;
+    const energyEmpty = flowerSpiritState.energy <= 0;
+    if (closeToPlayer && flowerSpiritGreetingCooldown === 0 && flowerSpiritGreetingTimer <= 0) {
+      flowerSpiritGreetingTimer = 2.2;
+      flowerSpiritGreetingCooldown = 5.5;
+      if (energyEmpty) {
+        flowerSpiritGreetingBubble.textContent = '先帮我补充能量吧';
+      } else if (flowerSpiritCareTarget.cell && flowerSpiritCareTarget.kind) {
+        flowerSpiritGreetingBubble.textContent = flowerSpiritCareTarget.kind === 'water'
+          ? '我先飞近一点，再给花花浇水'
+          : '我先飞近一点，再给花花施肥';
+      } else {
+        flowerSpiritGreetingBubble.textContent = flowerSpiritGreetingMessages[Math.floor(Math.random() * flowerSpiritGreetingMessages.length)]!;
+      }
+    }
+    flowerSpiritGreetingTimer = Math.max(0, flowerSpiritGreetingTimer - delta);
+    if (flowerSpiritGreetingTimer > 0 && bubbleOnScreen) {
+      const bubbleX = (flowerSpiritScreenPos.x * 0.5 + 0.5) * window.innerWidth;
+      const bubbleY = (-flowerSpiritScreenPos.y * 0.5 + 0.5) * window.innerHeight;
+      flowerSpiritGreetingBubble.style.display = 'block';
+      flowerSpiritGreetingBubble.style.opacity = `${Math.min(1, flowerSpiritGreetingTimer / 0.28)}`;
+      flowerSpiritGreetingBubble.style.left = `${bubbleX}px`;
+      flowerSpiritGreetingBubble.style.top = `${bubbleY - 20}px`;
+    } else {
+      flowerSpiritGreetingBubble.style.display = 'none';
+    }
+
+    for (let i = 0; i < flowerSpiritSparkleData.length; i++) {
+      const sparkle = flowerSpiritSparkleData[i]!;
+      const t = flowerSpiritPhase.value * sparkle.speed + sparkle.phase;
+      sparkle.mesh.position.set(
+        Math.cos(t + sparkle.angle) * sparkle.radius,
+        0.55 + sparkle.height + Math.sin(t * 1.9) * 0.06,
+        Math.sin(t + sparkle.angle) * sparkle.radius * 0.6,
+      );
+      const pulse = 0.65 + Math.sin(t * 2.4) * 0.18 + Math.sin(t * 0.7) * 0.08;
+      sparkle.mesh.scale.setScalar(Math.max(0.18, pulse));
+      (sparkle.mesh.material as THREE.MeshBasicMaterial).opacity = 0.26 + Math.max(0, pulse) * 0.22;
+    }
+
+    animateFlowerSpiritRig(flowerSpiritRig, delta, flowerSpiritPhase);
+    updateFlowerSpiritHud();
+  };
+
   const setSowMode = (enabled: boolean): void => {
     sowMode = enabled;
     for (const cell of plotCells) {
@@ -3696,6 +4427,7 @@ function bootstrap(): void {
 
   refreshSeedDock();
   updateQuickHud();
+  updateFlowerSpiritHud();
   const updateDrawBtnCost = (): void => {
     const zoneCost = getNextZoneCreateCost();
     const zoneCostText = zoneCost === 0 ? '首次免费' : `${zoneCost} 金币`;
@@ -4020,6 +4752,7 @@ function bootstrap(): void {
     updatePlantGrowthAnimation(delta, animPhase);
     updatePromptFx(delta);
     updateHoverHint();
+    updateFlowerSpirit(delta);
     updatePreviewPlayer(delta);
     if (controls.enableDamping) controls.update();
 
