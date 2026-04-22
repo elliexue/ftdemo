@@ -320,12 +320,14 @@ function getSharedToyMaterial(material: THREE.MeshStandardMaterial | THREE.MeshB
   let toon = sharedToyMaterials.get(key);
   if (!toon) {
     const base = toPastelColor(material.color ?? new THREE.Color(0xffffff));
+    // Plot cells use transparent materials, so we preserve transparency settings
+    const preserveTransparency = material.transparent && material.opacity < 0.9;
     toon = new THREE.MeshToonMaterial({
       color: base,
       emissive: base.clone().multiplyScalar(0.03),
-      transparent: material.transparent,
-      opacity: material.opacity,
-      depthWrite: material.depthWrite,
+      transparent: preserveTransparency,
+      opacity: preserveTransparency ? material.opacity : 1.0,
+      depthWrite: preserveTransparency ? false : material.depthWrite,
       depthTest: material.depthTest,
       side: material.side,
     });
@@ -441,6 +443,7 @@ type PlotLifeState = {
   giantBloom: boolean;
   matureProgress: number;
   matureClusterReady: boolean;
+  transitionPulse: number; // 过渡脉冲动画（0-1）
 };
 
 type PlotFx = {
@@ -732,6 +735,175 @@ function addPlantingSubplots(
   }
 }
 
+// ── Border decoration helpers ────────────────────────────────────────────────
+
+function addBorderStone(root: THREE.Group, x: number, z: number, scale: number, tall = false, collector?: THREE.Object3D[]): void {
+  const mat = getSharedStaticStandardMaterial({
+    color: tall ? 0xb8b0a4 : 0xc8bfb2,
+    roughness: 0.92,
+    metalness: 0.03,
+  });
+  const baseR = tall ? 2.0 : 1.5;
+  const stone = makeScaledOctahedron(baseR * scale, 1, mat);
+  const sx = stone.scale.x;
+  stone.scale.set(
+    sx * (0.65 + Math.random() * 0.25),
+    sx * (0.38 + Math.random() * 0.18),
+    sx * (0.65 + Math.random() * 0.22),
+  );
+  stone.position.set(x, 0.38, z);
+  stone.rotation.y = Math.random() * Math.PI * 2;
+  stone.rotation.x = (Math.random() - 0.5) * 0.4;
+  stone.castShadow = true;
+  root.add(stone);
+  if (collector) collector.push(stone);
+}
+
+function addBorderGrassTuft(root: THREE.Group, x: number, z: number, scale = 1, collector?: THREE.Object3D[]): void {
+  const mat = getSharedStaticStandardMaterial({ color: 0x5da33f, roughness: 0.88 });
+  const g = new THREE.Group();
+  const blades = 3 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < blades; i++) {
+    const h = (0.04 + Math.random() * 0.04) * scale;
+    const blade = new THREE.Mesh(
+      new THREE.BoxGeometry(0.01 * scale, h, 0.01 * scale),
+      mat,
+    );
+    blade.position.set(
+      (Math.random() - 0.5) * 0.04 * scale,
+      h * 0.5,
+      (Math.random() - 0.5) * 0.04 * scale,
+    );
+    blade.rotation.x = (Math.random() - 0.5) * 0.5;
+    blade.rotation.z = (Math.random() - 0.5) * 0.5;
+    g.add(blade);
+  }
+  g.position.set(x, 0.38, z);
+  g.castShadow = false;
+  root.add(g);
+  if (collector) collector.push(g);
+}
+
+function addBorderMushroom(root: THREE.Group, x: number, z: number, scale = 1, collector?: THREE.Object3D[]): void {
+  const stemMat = getSharedStaticStandardMaterial({ color: 0xf0ead6, roughness: 0.85 });
+  const capMat = getSharedStaticStandardMaterial({ color: 0x8b6914, roughness: 0.78 });
+  const stemHeight = 0.12 * scale;
+  const stem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.018 * scale, 0.022 * scale, stemHeight, 8),
+    stemMat,
+  );
+  stem.position.set(x, 0.38 + stemHeight * 0.5, z);
+  root.add(stem);
+
+  const capGeo = new THREE.SphereGeometry(0.04 * scale, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55);
+  const cap = new THREE.Mesh(capGeo, capMat);
+  cap.position.set(x, 0.38 + stemHeight + 0.04 * scale, z);
+  root.add(cap);
+
+  if (collector) { collector.push(stem); collector.push(cap); }
+}
+
+function addBorderDecorations(
+  root: THREE.Group,
+  outline: THREE.Vector2[],
+  density = 0.12,
+  decorCollector?: THREE.Object3D[],
+): void {
+  if (outline.length < 3) return;
+  const postMat = getSharedStaticStandardMaterial({ color: 0xf1eee3, roughness: 0.9 });
+  const railMat = getSharedStaticStandardMaterial({ color: 0xe7dfd2, roughness: 0.88 });
+  const center = outline
+    .reduce((acc, p) => acc.add(p), new THREE.Vector2(0, 0))
+    .multiplyScalar(1 / outline.length);
+
+  const positions: Array<{
+    x: number; z: number;
+    tangent: THREE.Vector2;
+    inward: THREE.Vector2;
+    state: 'decor' | 'fence';
+  }> = [];
+  let fenceMode = false;
+
+  for (let i = 0; i < outline.length; i++) {
+    const a = outline[i]!;
+    const b = outline[(i + 1) % outline.length]!;
+    const edge = new THREE.Vector2().subVectors(b, a);
+    const len = edge.length();
+    if (len < 0.08) continue;
+    const steps = Math.max(3, Math.floor(len / density));
+    const tangent = edge.clone().multiplyScalar(1 / len);
+    const normal = new THREE.Vector2(-tangent.y, tangent.x);
+
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      const base = new THREE.Vector2(
+        THREE.MathUtils.lerp(a.x, b.x, t),
+        THREE.MathUtils.lerp(a.y, b.y, t),
+      );
+      const wobble = (Math.random() - 0.5) * 0.12;
+      const px = base.x + normal.x * wobble;
+      const pz = base.y + normal.y * wobble;
+      const inward = center.clone().sub(base).normalize();
+      const seed = (i * 37 + s * 13) & 0xffff;
+      const rand = (n: number) => ((seed * 2654435761 + n) & 0xffff) / 0xffff;
+
+      fenceMode = fenceMode
+        ? rand(2) < 0.45
+        : rand(1) < 0.30;
+
+      positions.push({ x: px, z: pz, tangent: tangent.clone(), inward: inward.clone(), state: fenceMode ? 'fence' : 'decor' });
+    }
+  }
+
+  for (const pos of positions) {
+    if (pos.state !== 'decor') continue;
+    const { x, z, inward, tangent } = pos;
+    const seed = ((x * 100 + z * 73) | 0);
+    const rng = (n: number) => ((seed * 2654435761 + n) & 0xffff) / 0xffff;
+
+    const innerCount = Math.random() < 0.6 ? 1 : 2;
+    for (let k = 0; k < innerCount; k++) {
+      const off = inward.clone().multiplyScalar(0.02 + rng(k * 7) * 0.10);
+      const side = tangent.clone().multiplyScalar((rng(k * 3) - 0.5) * 0.16);
+      const size = 0.02 + rng(k * 11) * 0.20;
+      const isTall = rng(k * 5) < 0.20;
+      addBorderStone(root, x + off.x + side.x, z + off.y + side.y, size, isTall, decorCollector);
+    }
+
+    if (rng(4) < 0.25) {
+      const off = inward.clone().multiplyScalar(0.09 + rng(5) * 0.08);
+      const side = tangent.clone().multiplyScalar((rng(6) - 0.5) * 0.08);
+      const size = 0.02 + rng(7) * 0.10;
+      addBorderStone(root, x + off.x + side.x, z + off.y + side.y, size, false, decorCollector);
+    }
+
+    if (rng(8) < 0.45) {
+      const mOff = inward.clone().multiplyScalar(0.04 + rng(9) * 0.05);
+      const mSide = tangent.clone().multiplyScalar((rng(10) - 0.5) * 0.04);
+      addBorderMushroom(root, x + mOff.x + mSide.x, z + mOff.y + mSide.y, 0.7 + rng(11) * 0.55, decorCollector);
+    }
+
+    if (rng(12) < 0.55) {
+      const gOff = inward.clone().multiplyScalar(0.03 + rng(13) * 0.06);
+      const gSide = tangent.clone().multiplyScalar((rng(14) - 0.5) * 0.05);
+      addBorderGrassTuft(root, x + gOff.x + gSide.x, z + gOff.y + gSide.y, 0.5 + rng(15) * 0.7, decorCollector);
+    }
+  }
+
+  for (const pos of positions) {
+    if (pos.state !== 'fence') continue;
+    const { x, z, tangent } = pos;
+    const ph = 0.38;
+    const r = 0.018 + Math.random() * 0.010;
+    const post = makeScaledCylinder(r, r * 1.1, ph, 6, postMat);
+    post.position.set(x, ph * 0.5 + 0.15, z);
+    post.rotation.y = Math.atan2(tangent.y, tangent.x) + Math.PI / 2;
+    post.castShadow = true;
+    root.add(post);
+    if (decorCollector) decorCollector.push(post);
+  }
+}
+
 function addFenceLoop(root: THREE.Group, width: number, depth: number): void {
   const postMat = new THREE.MeshStandardMaterial({ color: 0xc79b6f, roughness: 0.9 });
   const railMat = new THREE.MeshStandardMaterial({ color: 0xb88b60, roughness: 0.88 });
@@ -904,6 +1076,13 @@ function addGroundZone(root: THREE.Group, x: number, z: number, r: number, _flow
   }
 
   const shape = new THREE.Shape(outline);
+  const capMat = getSharedStaticStandardMaterial({ color: 0x1a4a2a, roughness: 0.92 });
+  const cap = new THREE.Mesh(new THREE.ShapeGeometry(shape), capMat);
+  cap.rotation.x = -Math.PI / 2;
+  cap.position.set(x, 0.352, z);
+  cap.receiveShadow = true;
+  root.add(cap);
+
   const soil = new THREE.Mesh(
     new THREE.ShapeGeometry(shape),
     getSharedStaticStandardMaterial({ color: 0x6f5134, roughness: 0.98 }),
@@ -916,51 +1095,27 @@ function addGroundZone(root: THREE.Group, x: number, z: number, r: number, _flow
   const worldPolygon = outline.map((p) => new THREE.Vector2(x + p.x, z + p.y));
   addPlantingSubplots(root, worldPolygon, { step: 0.56, topY: 0.395, maxPlots: 56 });
 
-  const boundaryPoints = outline.map((p) => new THREE.Vector3(x + p.x, 0.39, z + p.y));
-  const fencePostMat = getSharedStaticStandardMaterial({ color: 0xc79b6f, roughness: 0.88 });
-  const fenceRailMat = getSharedStaticStandardMaterial({ color: 0xb88b60, roughness: 0.86 });
-  const postGeo = getSharedBoxGeometry(0.052, 0.44, 0.052);
 
-  for (let i = 0; i < boundaryPoints.length; i++) {
-    const p = boundaryPoints[i]!;
-    const n = boundaryPoints[(i + 1) % boundaryPoints.length]!;
-
-    const post = new THREE.Mesh(postGeo, fencePostMat);
-    post.position.set(p.x, 0.48, p.z);
-    post.castShadow = true;
-    root.add(post);
-
-    const dx = n.x - p.x;
-    const dz = n.z - p.z;
-    const segLen = Math.hypot(dx, dz);
-    if (segLen < 0.16) continue;
-    const yaw = Math.atan2(dz, dx);
-    const mx = (p.x + n.x) * 0.5;
-    const mz = (p.z + n.z) * 0.5;
-
-    const railUpper = new THREE.Mesh(new THREE.BoxGeometry(segLen, 0.04, 0.035), fenceRailMat);
-    railUpper.position.set(mx, 0.62, mz);
-    railUpper.rotation.y = yaw;
-    railUpper.castShadow = true;
-    root.add(railUpper);
-
-    const railLower = new THREE.Mesh(new THREE.BoxGeometry(segLen, 0.04, 0.035), fenceRailMat);
-    railLower.position.set(mx, 0.47, mz);
-    railLower.rotation.y = yaw;
-    railLower.castShadow = true;
-    root.add(railLower);
-  }
+  addBorderDecorations(root, worldPolygon, 0.12);
 
 }
 
 function addPolygonPlantingZone(root: THREE.Group, polygon: THREE.Vector2[], _flowerColor: number): void {
   if (polygon.length < 3) return;
-  const shape = new THREE.Shape(polygon);
+  // Deep green planting area ground cap
+  const capMat = getSharedStaticStandardMaterial({ color: 0x1a4a2a, roughness: 0.92 });
+  const capShape = new THREE.Shape(polygon);
+  const cap = new THREE.Mesh(new THREE.ShapeGeometry(capShape), capMat);
+  cap.rotation.x = Math.PI / 2;
+  cap.position.y = 0.362;
+  cap.receiveShadow = true;
+  root.add(cap);
+
+  // Brown soil layer
   const soil = new THREE.Mesh(
-    new THREE.ShapeGeometry(shape),
+    new THREE.ShapeGeometry(new THREE.Shape(polygon)),
     getSharedStaticStandardMaterial({ color: 0x6f5134, roughness: 0.98 }),
   );
-  // Use +PI/2 here to keep drawn XY polygon aligned with world XZ preview direction.
   soil.rotation.x = Math.PI / 2;
   soil.position.y = 0.37;
   soil.receiveShadow = true;
@@ -968,45 +1123,8 @@ function addPolygonPlantingZone(root: THREE.Group, polygon: THREE.Vector2[], _fl
 
   addPlantingSubplots(root, polygon, { step: 0.5, topY: 0.395, maxPlots: 120 });
 
-  // Build fence exactly on user-drawn segments (no resampling, no smoothing).
-  const fencePostMat = getSharedStaticStandardMaterial({ color: 0xc89762, roughness: 0.9 });
-  const postBodyGeo = getSharedBoxGeometry(0.072, 0.24, 0.03);
-  const postCapGeo = new THREE.CapsuleGeometry(0.036, 0.01, 4, 8);
-
-  const placePicket = (x: number, z: number, yaw: number): void => {
-    const body = new THREE.Mesh(postBodyGeo, fencePostMat);
-    body.position.set(x, 0.52, z);
-    body.rotation.y = yaw;
-    body.castShadow = true;
-    root.add(body);
-
-    const cap = new THREE.Mesh(postCapGeo, fencePostMat);
-    cap.position.set(x, 0.655, z);
-    cap.rotation.y = yaw;
-    cap.castShadow = true;
-    root.add(cap);
-  };
-
-  for (let i = 0; i < polygon.length; i++) {
-    const a = polygon[i]!;
-    const b = polygon[(i + 1) % polygon.length]!;
-    const dx = b.x - a.x;
-    const dz = b.y - a.y;
-    const segLen = Math.hypot(dx, dz);
-    if (segLen < 0.08) continue;
-    const yaw = Math.atan2(dz, dx);
-    // Make pickets sparser and avoid corner duplicates that look like "forks".
-    const picketSpacing = 0.16;
-    const picketCount = Math.max(2, Math.floor(segLen / picketSpacing));
-    for (let s = 0; s < picketCount; s++) {
-      const t = s / picketCount;
-      const px = THREE.MathUtils.lerp(a.x, b.x, t);
-      const pz = THREE.MathUtils.lerp(a.y, b.y, t);
-      placePicket(px, pz, yaw);
-    }
-
-    // Intentionally no long cross rails; keep only pickets to avoid interior crossing bars.
-  }
+  // Border decorations: stones, mushrooms, grass, fence segments
+  addBorderDecorations(root, polygon, 0.12);
 }
 
 type SavedZone = {
@@ -1915,7 +2033,8 @@ function buildGarden(scene: THREE.Scene): THREE.Group {
     { x: 8.8, z: 3.8, r: 1.75, color: 0xffd1e8 },
     { x: 8.8, z: -0.6, r: 1.7, color: 0xffe6a8 },
   ];
-  addGroundZonesWithClearance(root, desiredZones, blocked);
+  // 用户通过绘制添加种植区域，不预设圆形种植区
+  // addGroundZonesWithClearance(root, desiredZones, blocked);
 
   addFlowerWallZone(root, -8.8, -2.6, 1.2, 5.2);
   addWoodLatticeRoseWall(root, -3.9, -6.7, 6.2, 2.5);
@@ -1997,6 +2116,7 @@ function bootstrap(): void {
   const gardenGroundY = gardenRoot.position.y + 0.36 * gardenScale;
   const drawSurfaceY = gardenGroundY + 0.02;
   const playerGroundY = gardenGroundY - 0.06;
+  // 加载已保存的区域
   const loadedZones = loadSavedZones();
   const cleanedZones = cleanupLegacySwingZonesOnce(loadedZones);
   const savedZones = rollbackLatestZoneOnce(cleanedZones);
@@ -2077,6 +2197,31 @@ function bootstrap(): void {
   document.body.appendChild(sowModeBtn);
   sowModeBtn.textContent = '馃尡 杩涘叆鎾妯″紡';
 
+
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = '🔄 重置花园';
+  resetBtn.style.position = 'fixed';
+  resetBtn.style.right = '54px';
+  resetBtn.style.bottom = '12px';
+  resetBtn.style.padding = '6px 12px';
+  resetBtn.style.borderRadius = '8px';
+  resetBtn.style.border = '1px solid rgba(190,220,205,0.42)';
+  resetBtn.style.background = 'rgba(14,28,24,0.88)';
+  resetBtn.style.color = '#effaf3';
+  resetBtn.style.font = '700 11px/1 "Segoe UI","PingFang SC",sans-serif';
+  resetBtn.style.cursor = 'pointer';
+  resetBtn.style.zIndex = '22';
+  resetBtn.addEventListener('click', () => {
+    if (confirm('确定要重置花园吗？这将清除所有种植区域和植物。')) {
+      localStorage.removeItem('ft_garden_custom_zones_v2');
+      localStorage.removeItem('ft_garden_plants_v1');
+      localStorage.removeItem('ft_garden_rollback_latest_zone_once_v1_done');
+      localStorage.removeItem('ft_garden_swing_zone_cleanup_v2_done');
+      location.reload();
+    }
+  });
+  document.body.appendChild(resetBtn);
+
   const helpBtn = document.createElement('button');
   helpBtn.type = 'button';
   helpBtn.textContent = '?';
@@ -2120,15 +2265,15 @@ function bootstrap(): void {
   helpPanel.style.boxShadow = '0 16px 42px rgba(0,0,0,0.38)';
   helpPanel.innerHTML = [
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">',
-    '<div style="font:700 17px/1.2 &quot;Segoe UI&quot;,&quot;PingFang SC&quot;,sans-serif;">鎿嶄綔璇存槑</div>',
-    '<button id="help-close" type="button" style="padding:5px 9px;border-radius:8px;border:1px solid rgba(190,220,204,0.35);background:rgba(42,58,52,0.9);color:#f0fff7;cursor:pointer;">鍏抽棴</button>',
+    '<div style="font:700 17px/1.2 &quot;Segoe UI&quot;,&quot;PingFang SC&quot;,sans-serif;">操作说明</div>',
+    '<button id="help-close" type="button" style="padding:5px 9px;border-radius:8px;border:1px solid rgba(190,220,204,0.35);background:rgba(42,58,52,0.9);color:#f0fff7;cursor:pointer;">关闭</button>',
     '</div>',
     '<div style="font:12px/1.7 &quot;Segoe UI&quot;,&quot;PingFang SC&quot;,sans-serif;opacity:0.96;">',
-    'WASD / 鏂瑰悜閿? 绉诲姩锛孲hift: 璺戞锛孊: 鎵撳紑鍟嗗簵锛孭: 鍒囨崲鎾妯″紡<br/>',
-    '榧犳爣宸﹂敭鎷栧姩鏃嬭浆锛屾粴杞缉鏀撅紝鍙抽敭骞崇Щ<br/>',
-    '鎾妯″紡寮€鍚? 鏄剧ず搴曢儴绉嶅瓙鍒楄〃锛屽彲鍦ㄥ湴鍧楁挱绉?br/>',
-    '鎾妯″紡鍏抽棴: 闅愯棌绉嶅瓙鍒楄〃锛屽彲缁х画娴囨按 / 鏂借偉 / 鏀惰姳<br/>',
-    'G: 杩涘叆鍒掑尯妯″紡锛屽乏閿姞鐐癸紝Enter/绌烘牸纭锛孊ackspace鎾ら攢锛孍sc鍙栨秷',
+    'WASD / 方向键：移动，Shift：跑步，B：打开商店，P：切换种植模式<br/>',
+    '鼠标左键拖动时旋转，滚轮缩放，右键平移<br/>',
+    '种植模式开启：显示底部种子列表，可在地块播种<br/>',
+    '种植模式关闭：隐藏种子列表，可继续浇水 / 施肥 / 收获<br/>',
+    'G：进入画区模式，左键加点，Enter/空格确认，Backspace取消，Esc取消',
     '</div>',
   ].join('');
   document.body.appendChild(helpPanel);
@@ -2196,7 +2341,7 @@ function bootstrap(): void {
   shopIcon.style.height = '58px';
   shopIcon.style.objectFit = 'contain';
   const shopLabel = document.createElement('span');
-  shopLabel.textContent = 'SHOP';
+  shopLabel.textContent = '商店';
   shopLabel.style.font = '700 11px/1 "Segoe UI",sans-serif';
   shopLabel.style.letterSpacing = '0.8px';
   shopBtn.style.position = 'fixed';
@@ -2320,6 +2465,7 @@ function bootstrap(): void {
   const clock = new THREE.Clock();
   const toGardenLocal = (p: THREE.Vector2): THREE.Vector2 => new THREE.Vector2(p.x / gardenScale, p.y / gardenScale);
   const plotCells: THREE.Mesh[] = [];
+  const borderDecorObjects: THREE.Object3D[] = [];
   const activePlotCells = new Set<THREE.Mesh>();
   const promptFxCells = new Set<THREE.Mesh>();
   let sowMode = false;
@@ -2332,11 +2478,24 @@ function bootstrap(): void {
   };
   const syncPlotCellVisibility = (target?: THREE.Mesh): void => {
     if (target) {
-      target.visible = true;
+      // 单个 cell 同步时，也遵循 sowMode 规则，只有种植模式才显示土块
+      target.visible = sowMode;
+      const flower = target.userData.flower as THREE.Object3D | undefined;
+      if (flower) flower.visible = true;
+      const promptFx = target.userData.promptFx as THREE.Object3D | undefined;
+      if (promptFx) promptFx.visible = true;
       return;
     }
     for (const cell of plotCells) {
-      cell.visible = true;
+      const life = cell.userData.life;
+      // 种植模式下所有地块可见，非种植模式下不显示任何地块
+      cell.visible = sowMode;
+      // 花始终可见
+      const flower = cell.userData.flower as THREE.Object3D | undefined;
+      if (flower) flower.visible = true;
+      // 浇水施肥特效始终可见
+      const promptFx = cell.userData.promptFx as THREE.Object3D | undefined;
+      if (promptFx) promptFx.visible = true;
     }
   };
   const collectPlotCells = (): void => {
@@ -2350,6 +2509,7 @@ function bootstrap(): void {
         if (obj.userData.promptFx) promptFxCells.add(obj);
       }
     });
+    console.log('[Garden] Plot cells collected:', plotCells.length);
     syncPlotCellVisibility();
   };
   collectPlotCells();
@@ -2358,8 +2518,11 @@ function bootstrap(): void {
     for (const cell of plotCells) {
       const mats = Array.isArray(cell.material) ? cell.material : [cell.material];
       for (const m of mats) {
-        if (m instanceof THREE.MeshStandardMaterial || m instanceof THREE.MeshToonMaterial) {
-          m.color.setHex(0xc9d3df);
+        if (m instanceof THREE.MeshToonMaterial) {
+          m.transparent = true;
+          m.opacity = 0.38;
+          m.depthWrite = false;
+        } else if (m instanceof THREE.MeshStandardMaterial || m instanceof THREE.MeshBasicMaterial) {
           m.transparent = true;
           m.opacity = 0.38;
           m.depthWrite = true;
@@ -2373,8 +2536,8 @@ function bootstrap(): void {
       ? 'linear-gradient(180deg, rgba(70,115,84,0.96), rgba(43,84,62,0.98))'
       : 'linear-gradient(180deg, rgba(41,64,83,0.94), rgba(28,44,58,0.96))';
     sowModeBtn.style.borderColor = enabled ? 'rgba(206,242,220,0.56)' : 'rgba(178,228,206,0.42)';
-    sowModeBtn.textContent = enabled ? 'Exit sow mode' : 'Enter sow mode';
-    actionHud.textContent = enabled ? 'Sow mode: click a plot to plant or care' : 'Normal mode: water/fertilize/harvest';
+    sowModeBtn.textContent = enabled ? '🌱 退出种植' : '🌱 进入种植';
+    actionHud.textContent = enabled ? '种植模式：点击地块种植或养护' : '普通模式：浇水/施肥/收获';
   };
   setSowMode(false);
   const seedButtons = new Map<SeedId, HTMLButtonElement>();
@@ -2440,7 +2603,7 @@ function bootstrap(): void {
   const clearPlantVisual = (cell: THREE.Mesh): void => {
     const existing = cell.userData.flower as THREE.Object3D | undefined;
     if (existing) {
-      cell.remove(existing);
+      gardenRoot.remove(existing);
       disposePlantVisual(existing);
     }
     cell.userData.flower = null;
@@ -2450,7 +2613,7 @@ function bootstrap(): void {
     const existing = cell.userData.promptFx as THREE.Object3D | undefined;
     if (!existing) return;
     promptFxCells.delete(cell);
-    cell.remove(existing);
+    gardenRoot.remove(existing);
     existing.traverse((obj) => {
       if (!(obj instanceof THREE.Mesh)) return;
       obj.geometry?.dispose();
@@ -2689,6 +2852,7 @@ function bootstrap(): void {
       g.add(bloom);
       addSpeciesSignature(g, seed, 0.48, 0.92);
     } else {
+      // 阶段4：逐渐绽放逻辑
       if (!life.matureClusterReady) {
         const p = Math.min(1, Math.max(0, life.matureProgress));
         const stemHeight = 0.34 + p * 0.16;
@@ -2700,28 +2864,39 @@ function bootstrap(): void {
         const bloom = makeBloomHead(seed, bloomScale);
         bloom.position.y = stemHeight + 0.05 + p * 0.06;
         g.add(bloom);
-        const branchGrowing = 1 + Math.floor(p * 4);
-        for (let i = 0; i < branchGrowing; i++) {
-          const a = (i / branchGrowing) * Math.PI * 2;
-          const pivot = new THREE.Group();
-          pivot.position.set(0, stemHeight * (0.55 + p * 0.16), 0);
-          pivot.rotation.y = a;
-          pivot.rotation.z = -(0.45 + p * 0.35);
-          g.add(pivot);
+        // 预先创建5个分支，根据进度逐渐显示
+        const maxBranches = 5;
+        for (let i = 0; i < maxBranches; i++) {
+          const branchGroup = new THREE.Group();
+          branchGroup.userData.branchIndex = i;
+          branchGroup.userData.isGrowingBranch = true; // 标记为成长中分支
+          const baseAngle = maxBranches > 1 ? (i / maxBranches) * Math.PI * 2 : 0;
+          branchGroup.rotation.y = baseAngle;
+          branchGroup.rotation.z = -(0.45 + p * 0.35);
+          branchGroup.position.y = stemHeight * (0.55 + p * 0.16);
+          branchGroup.visible = false;
+          g.add(branchGroup);
           const branchLen = 0.12 + p * 0.09;
           const arm = new THREE.Mesh(sharedPlantGeometries.cylinder, getSharedPlantToonMaterial(profile.stemColor));
           arm.scale.set(0.018, branchLen, 0.024);
           arm.position.y = branchLen * 0.5;
-          pivot.add(arm);
+          branchGroup.add(arm);
           const bud = makeBloomHead(seed, 0.3 + p * 0.18);
           bud.position.y = branchLen + 0.015;
-          pivot.add(bud);
+          branchGroup.add(bud);
         }
         addSpeciesSignature(g, seed, 0.5 + p * 0.06, 1);
       } else {
+        // 成熟时使用华丽的最终态
         const cluster = makeBranchCluster(seed, life.giantBloom);
+        cluster.userData.isFinalCluster = true; // 标记为最终花簇
+        cluster.visible = false; // 初始隐藏，由动画控制显示
         g.add(cluster);
         addSpeciesSignature(g, seed, 0.56, 1.08);
+        // 巨花放大
+        if (life.giantBloom) {
+          g.scale.setScalar(2.08);
+        }
       }
     }
 
@@ -2744,8 +2919,11 @@ function bootstrap(): void {
     clearPromptFx(cell);
     if (!life) return;
     const visual = buildPlantVisual(life);
-    visual.position.set(0, -0.01, 0);
-    cell.add(visual);
+    const wp = new THREE.Vector3();
+    cell.getWorldPosition(wp);
+    const inv = 1 / gardenRoot.scale.x;
+    visual.position.set(wp.x * inv, (wp.y - 0.01) * inv, wp.z * inv);
+    gardenRoot.add(visual);
     disableRealtimeShadows(visual);
     freezeStaticTransforms(visual);
     cell.userData.flower = visual;
@@ -2767,7 +2945,8 @@ function bootstrap(): void {
         d.position.set(Math.cos(a) * 0.12, yBase + 0.05, Math.sin(a) * 0.12);
         hint.add(d);
       }
-      cell.add(hint);
+      hint.position.set(wp.x * inv, (wp.y + yBase) * inv, wp.z * inv);
+      gardenRoot.add(hint);
       cell.userData.promptFx = hint;
       promptFxCells.add(cell);
     } else if (life.stage === 3 && life.needsFertilizer) {
@@ -2786,7 +2965,8 @@ function bootstrap(): void {
         p.position.set(Math.cos(a) * 0.13, 0.42, Math.sin(a) * 0.13);
         hint.add(p);
       }
-      cell.add(hint);
+      hint.position.set(wp.x * inv, (wp.y + 0.36) * inv, wp.z * inv);
+      gardenRoot.add(hint);
       cell.userData.promptFx = hint;
       promptFxCells.add(cell);
     }
@@ -2881,6 +3061,79 @@ function bootstrap(): void {
     }
   };
 
+  // 更新植物生长动画（每帧调用）- 根据进度实时缩放植物和控制分支显示
+  const updatePlantGrowthAnimation = (delta: number, phase: number): void => {
+    for (const cell of activePlotCells) {
+      const flower = cell.userData.flower as THREE.Group | undefined;
+      const life = getLife(cell);
+      if (!flower || !life) continue;
+
+      let targetScale = 1;
+      let breathe = 1;
+
+      if (life.stage === 1) {
+        // 阶段1：种子 → 发芽，逐渐长大
+        const progress = life.growProgress;
+        targetScale = 0.4 + progress * 0.6;
+        if (progress > 0.65) {
+          breathe = 1 + Math.sin(phase * 4) * 0.03;
+        }
+      } else if (life.stage === 2) {
+        // 阶段2：幼苗，逐渐长大
+        const progress = life.growProgress;
+        targetScale = 0.6 + progress * 0.4;
+        if (progress > 0.65) {
+          breathe = 1 + Math.sin(phase * 4) * 0.04;
+        }
+      } else if (life.stage === 3) {
+        // 阶段3：开花中，花苞逐渐变大
+        const progress = life.growProgress;
+        targetScale = 0.75 + progress * 0.25;
+        if (progress > 0.65) {
+          breathe = 1 + Math.sin(phase * 4) * 0.05;
+        }
+      } else if (life.stage === 4) {
+        if (life.matureClusterReady) {
+          // 成熟后：显示华丽最终态 + 轻微呼吸效果
+          targetScale = 1;
+          breathe = 1 + Math.sin(phase * 1.5) * 0.015;
+          // 渐隐绽放态，显示最终态
+          let bloomAlpha = 1;
+          for (const child of flower.children) {
+            if (child instanceof THREE.Group && child.userData.isGrowingBranch) {
+              bloomAlpha = Math.max(0, bloomAlpha - 0.08);
+              child.visible = bloomAlpha > 0;
+            }
+            if (child instanceof THREE.Group && child.userData.isFinalCluster) {
+              child.visible = true;
+              child.scale.setScalar(1);
+            }
+          }
+        } else {
+          // 成熟中：根据进度逐渐绽放 + 显示更多分支
+          const p = life.matureProgress;
+          targetScale = 0.7 + p * 0.3;
+          breathe = 1 + Math.sin(phase * 2) * 0.02 * p;
+          // 根据进度显示更多分支
+          const visibleBranches = Math.floor(p * 5);
+          for (const child of flower.children) {
+            if (child instanceof THREE.Group && child.userData.isGrowingBranch) {
+              child.visible = child.userData.branchIndex <= visibleBranches;
+            }
+          }
+        }
+      }
+
+      // 应用缩放
+      flower.scale.setScalar(targetScale * breathe);
+
+      // 巨花特殊处理
+      if (life.stage === 4 && life.giantBloom && !life.matureClusterReady) {
+        flower.scale.setScalar(targetScale * breathe * 1.8);
+      }
+    }
+  };
+
   const clearDraw = (): void => {
     for (const m of drawState.markers) scene.remove(m);
     drawState.markers = [];
@@ -2918,29 +3171,29 @@ function bootstrap(): void {
       if (rackId) {
         const locked = getRackLockedSeed(rackId);
         if (locked && locked !== seedState.selectedSeed) {
-          return `Rack locked to ${SEED_CONFIG[locked].label}. Switch to matching seed.`;
+          return `此花架限定种植 ${SEED_CONFIG[locked].label}，请选择对应种子`;
         }
       }
     }
-    if (!life) return `Plantable: ${SEED_CONFIG[seedState.selectedSeed].label}`;
+    if (!life) return `可种植：${SEED_CONFIG[seedState.selectedSeed].label}`;
     const stage = life.stage as PlotStage;
     if (stage === 1) {
-      if (life.needsWater) return 'Stage 1 complete: water to enter Stage 2';
-      return `Stage 1 growing: ${Math.round(life.growProgress * 100)}%`;
+      if (life.needsWater) return '阶段1完成：浇水进入阶段2';
+      return `阶段1生长中：${Math.round(life.growProgress * 100)}%`;
     }
     if (stage === 2) {
-      if (life.needsWater) return 'Stage 2 complete: water to enter Stage 3';
-      return `Stage 2 growing: ${Math.round(life.growProgress * 100)}%`;
+      if (life.needsWater) return '阶段2完成：浇水进入阶段3';
+      return `阶段2生长中：${Math.round(life.growProgress * 100)}%`;
     }
     if (stage === 3) {
-      if (life.needsFertilizer) return 'Stage 3 complete: fertilize to enter Stage 4';
-      return `Stage 3 growing: ${Math.round(life.growProgress * 100)}%`;
+      if (life.needsFertilizer) return '阶段3完成：施肥进入阶段4';
+      return `阶段3生长中：${Math.round(life.growProgress * 100)}%`;
     }
     if (stage === 4) {
-      if (!life.matureClusterReady) return `Maturing: ${Math.round(life.matureProgress * 100)}%`;
-      return life.giantBloom ? 'Giant bloom ready: harvest now' : 'Bloom ready: harvest now';
+      if (!life.matureClusterReady) return `成熟中：${Math.round(life.matureProgress * 100)}%`;
+      return life.giantBloom ? '巨花开花了：现在收获！' : '开花了：现在收获！';
     }
-    return `Growing: ${Math.round(life.growProgress * 100)}%`;
+    return `生长中：${Math.round(life.growProgress * 100)}%`;
   };
 
   const interactPlotCell = (cell: THREE.Mesh): void => {
@@ -2951,7 +3204,7 @@ function bootstrap(): void {
       updateQuickHud();
       for (const seedId of SEED_IDS) {
         const ownedLabel = shopOwnedLabels.get(seedId);
-        if (ownedLabel) ownedLabel.textContent = `Stock ${seedState.seeds[seedId]}`;
+        if (ownedLabel) ownedLabel.textContent = `库存 ${seedState.seeds[seedId]}`;
       }
       actionHud.textContent = describeCellAction(cell);
     };
@@ -2962,14 +3215,14 @@ function bootstrap(): void {
       if (rackId) {
         const locked = getRackLockedSeed(rackId);
         if (locked && locked !== seed) {
-          showToast(`This rack is locked to ${SEED_CONFIG[locked].label}`);
+          showToast(`此花架限定种植 ${SEED_CONFIG[locked].label}`);
           actionHud.textContent = describeCellAction(cell);
           return;
         }
       }
       if (seedState.seeds[seed] <= 0) {
-        showToast('Not enough seeds. Buy more in the shop.');
-        actionHud.textContent = 'Click plot: plant / water / fertilize';
+        showToast('种子不足，请去商店购买');
+        actionHud.textContent = '点击地块：种植/浇水/施肥';
         return;
       }
       seedState.seeds[seed] -= 1;
@@ -2983,11 +3236,12 @@ function bootstrap(): void {
         giantBloom: false,
         matureProgress: 0,
         matureClusterReady: false,
+        transitionPulse: 0,
       } satisfies PlotLifeState;
       cell.userData.planted = true;
       cell.userData.seedId = seed;
       enqueuePlotVisualRefresh(cell);
-      showToast(`${SEED_CONFIG[seed].label} planted. Stage 1 started.`);
+      showToast(`已种植 ${SEED_CONFIG[seed].label}，阶段1开始`);
       finalize();
       return;
     }
@@ -2995,7 +3249,7 @@ function bootstrap(): void {
     const stage = life.stage as PlotStage;
     if (stage === 1) {
       if (!life.needsWater) {
-        showToast('Stage 1 is still growing.');
+        showToast('阶段1生长中，请耐心等待');
         finalize();
         return;
       }
@@ -3006,14 +3260,14 @@ function bootstrap(): void {
       life.fertilizerCooldown = 0;
       enqueuePlotVisualRefresh(cell);
       spawnPlotFx(cell, 'water');
-      showToast('Watered. Entered Stage 2.');
+      showToast('已浇水，进入阶段2');
       finalize();
       return;
     }
 
     if (stage === 2) {
       if (!life.needsWater) {
-        showToast(`Stage 2 growth: ${Math.round(life.growProgress * 100)}%`);
+        showToast(`阶段2生长中：${Math.round(life.growProgress * 100)}%`);
         finalize();
         return;
       }
@@ -3024,14 +3278,14 @@ function bootstrap(): void {
       life.fertilizerCooldown = 0;
       enqueuePlotVisualRefresh(cell);
       spawnPlotFx(cell, 'water');
-      showToast('Watered. Entered Stage 3.');
+      showToast('已浇水，进入阶段3');
       finalize();
       return;
     }
 
     if (stage === 3) {
       if (!life.needsFertilizer) {
-        showToast(`Stage 3 growth: ${Math.round(life.growProgress * 100)}%`);
+        showToast(`阶段3生长中：${Math.round(life.growProgress * 100)}%`);
         finalize();
         return;
       }
@@ -3043,14 +3297,14 @@ function bootstrap(): void {
       life.matureClusterReady = false;
       enqueuePlotVisualRefresh(cell);
       spawnPlotFx(cell, 'fertilize');
-      showToast(life.giantBloom ? 'Fertilized. Giant bloom triggered.' : 'Fertilized. Entered Stage 4.');
+      showToast(life.giantBloom ? '已施肥，触发了巨花！' : '已施肥，进入阶段4');
       finalize();
       return;
     }
 
     if (stage === 4) {
       if (!life.matureClusterReady) {
-        showToast(`Maturing: ${Math.round(life.matureProgress * 100)}%`);
+        showToast(`成熟中：${Math.round(life.matureProgress * 100)}%`);
         finalize();
         return;
       }
@@ -3070,7 +3324,7 @@ function bootstrap(): void {
         }
       }
       spawnPlotFx(cell, 'mature');
-      showToast(`Harvested +${gain} coins`);
+      showToast(`收获了 +${gain} 金币`);
       finalize();
     }
   };
@@ -3086,8 +3340,13 @@ function bootstrap(): void {
           if (life.growProgress >= 1) {
             life.growProgress = 1;
             life.needsWater = true;
+            life.transitionPulse = 0; // 重置过渡状态
             enqueuePlotVisualRefresh(cell);
-            showToast('Stage 1 complete. Water to enter Stage 2.', 'background');
+            showToast('阶段1完成，浇水进入阶段2', 'background');
+          }
+          // 过渡动画：当进度 > 0.65 时开始脉冲效果
+          if (life.growProgress > 0.65) {
+            life.transitionPulse = Math.min(1, life.transitionPulse + delta * 3);
           }
         }
         continue;
@@ -3097,8 +3356,13 @@ function bootstrap(): void {
         if (life.growProgress >= 1) {
           life.growProgress = 1;
           life.needsWater = true;
+          life.transitionPulse = 0; // 重置过渡状态
           enqueuePlotVisualRefresh(cell);
-          showToast('Stage 2 complete. Water to enter Stage 3.', 'background');
+          showToast('阶段2完成，浇水进入阶段3', 'background');
+        }
+        // 过渡动画
+        if (life.growProgress > 0.65) {
+          life.transitionPulse = Math.min(1, life.transitionPulse + delta * 3);
         }
         continue;
       }
@@ -3107,8 +3371,13 @@ function bootstrap(): void {
         if (life.growProgress >= 1) {
           life.growProgress = 1;
           life.needsFertilizer = true;
+          life.transitionPulse = 0;
           enqueuePlotVisualRefresh(cell);
-          showToast('Stage 3 complete. Fertilize to enter Stage 4.', 'background');
+          showToast('阶段3完成，施肥进入阶段4', 'background');
+        }
+        // 过渡动画
+        if (life.growProgress > 0.65) {
+          life.transitionPulse = Math.min(1, life.transitionPulse + delta * 3);
         }
         continue;
       }
@@ -3116,9 +3385,10 @@ function bootstrap(): void {
         life.matureProgress = Math.min(1, life.matureProgress + delta * 0.24);
         if (life.matureProgress >= 1) {
           life.matureClusterReady = true;
+          life.transitionPulse = 0;
           enqueuePlotVisualRefresh(cell);
           spawnPlotFx(cell, 'mature');
-          showToast('Bloom is fully mature and ready to harvest.', 'background');
+          showToast('花已完全成熟，可以收获了！', 'background');
         }
         continue;
       }
@@ -3245,7 +3515,7 @@ function bootstrap(): void {
     buyBtn.addEventListener('click', () => {
       const priceValue = SEED_CONFIG[id].seedPrice;
       if (seedState.gold < priceValue) {
-        showToast('閲戝竵涓嶈冻');
+        showToast('金币不足');
         return;
       }
       seedState.gold -= priceValue;
@@ -3315,7 +3585,7 @@ function bootstrap(): void {
     applyToyStyle(gardenRoot, performanceProfile);
     freezeStaticTransforms(gardenRoot);
     collectPlotCells();
-    setSowMode(sowMode);
+    setSowMode(true);  // 绘制完成后自动进入种植模式
     requestShadowRefresh();
     clearDraw();
   };
@@ -3354,11 +3624,51 @@ function bootstrap(): void {
     ndc.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
     ndc.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(ndc, camera);
-    const hits = raycaster.intersectObjects(plotCells, false);
-    if (hits.length === 0) return;
-    const cell = hits[0]!.object as THREE.Mesh;
-    if (!sowMode && getLife(cell) == null) return;
-    interactPlotCell(cell);
+
+    // 射线检测 - 优先检测 plot cells
+    if (plotCells.length > 0) {
+      const hits = raycaster.intersectObjects(plotCells, false);
+      if (hits.length > 0) {
+        const cell = hits[0]!.object as THREE.Mesh;
+        console.log('[Garden] Hit plot cell:', cell, 'sowMode:', sowMode);
+        if (sowMode || getLife(cell) != null) {
+          interactPlotCell(cell);
+        }
+        return;
+      }
+    }
+
+    // 如果没命中 plot cells，检测装饰物
+    if (borderDecorObjects.length > 0) {
+      const decorHits = raycaster.intersectObjects(borderDecorObjects, true);
+      if (decorHits.length > 0) {
+        console.log('[Garden] Hit decoration, looking for nearest plot cell');
+        // 找到被装饰物遮挡的最近的 plot cell
+        const worldPoint = raycaster.ray.origin.clone().add(
+          raycaster.ray.direction.clone().multiplyScalar(decorHits[0]!.distance)
+        );
+        const localPoint = worldPoint.clone().sub(gardenRoot.position).divideScalar(gardenRoot.scale.x);
+
+        let nearestCell: THREE.Mesh | null = null;
+        let nearestDist = Infinity;
+        for (const cell of plotCells) {
+          const dx = cell.position.x - localPoint.x;
+          const dz = cell.position.z - localPoint.z;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearestCell = cell;
+          }
+        }
+        if (nearestCell && nearestDist < 0.8) {
+          console.log('[Garden] Found nearest plot cell at distance:', nearestDist);
+          if (sowMode || getLife(nearestCell) != null) {
+            interactPlotCell(nearestCell);
+          }
+          return;
+        }
+      }
+    }
   });
 
   renderer.domElement.addEventListener('pointermove', (ev) => {
@@ -3427,7 +3737,7 @@ function bootstrap(): void {
     hoverHintDirty = false;
     lastHoverHintAt = now;
     if (!sowMode && shopPanel.style.display === 'block') {
-      actionHud.textContent = 'Sow mode is off: click the bottom button to enter sow mode';
+      actionHud.textContent = '种植模式已关闭：点击底部按钮进入';
       return;
     }
     raycaster.setFromCamera(hoverNdc, camera);
@@ -3438,7 +3748,7 @@ function bootstrap(): void {
     }
     const cell = hits[0]!.object as THREE.Mesh;
     if (!sowMode && !getLife(cell)) {
-      actionHud.textContent = 'Sow mode is off: only planted plots can be interacted with';
+      actionHud.textContent = '种植模式已关闭：只有已种植的地块可以交互';
       return;
     }
     actionHud.textContent = describeCellAction(cell);
@@ -3517,11 +3827,14 @@ function bootstrap(): void {
   });
 
   let perfDebugAccum = 0;
+  let animPhase = 0;
   renderer.setAnimationLoop(() => {
     const delta = Math.min(clock.getDelta(), 1 / 30);
+    animPhase += delta;
     tickPlotLifecycle(delta);
     flushPlotVisualRefresh();
     updatePlotEffects(delta);
+    updatePlantGrowthAnimation(delta, animPhase);
     updatePromptFx(delta);
     updateHoverHint();
     updatePreviewPlayer(delta);
