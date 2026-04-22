@@ -1,0 +1,156 @@
+
+项目迁移说明（给另一台电脑的 AI）
+=================================
+
+用途
+----
+把本工程当前已完成的改动，在另一台电脑的同结构工程中复刻到一致状态。
+
+执行原则
+--------
+1) 优先按“最终状态”实现，不需要还原中间过程。
+2) 模块化约束保持不变：玩法优先改 `src/modules/**`，核心引擎仅在确需时改。
+3) 改完后跑一次 `npx vite build` 做编译校验。
+
+一、文档与协作规范（必须同步）
+----------------------------
+新增/更新文件：
+- `NEXT_AI_GUIDE.md`：约束下一位 AI 只在模块内开发、只记最终结果、统一交接规范
+- `AI_CHANGELOG.md`：所有改动按精简模板记录（只记最终交付）
+- `说明.txt`：补充 AI 接力规则入口
+
+二、控制与引擎
+--------------
+文件：`src/core/Engine.ts`
+- 保留：WASD 移动、Space 跳跃、右键拖拽转视角
+- 已完成：
+  - 跳跃：`verticalVelocity / gravity / jumpSpeed / groundHeight`
+  - 前后移动方向修正（W 前进、S 后退）
+  - 镜头上下拖拽方向修正
+  - 移除右键环视的 pointer-capture 锁定路径，避免 UI 点击被吞
+
+三、商店与 UI（最终状态）
+-----------------------
+文件：`src/modules/ui/UiModule.ts`
+- 首页有“打开商店”入口
+- 商店为居中弹层
+- 商店展示 10 种种子（图标+价格+购买）
+- 种子选择区动态生成，并显示库存（按钮文案含 `×数量`）
+- 事件触发使用 HUD 层 `pointerdown + data-action`
+- 货架滑动使用受控位移轨道（`translateX`）+ 左右按钮 + 滚轮
+- `B` 键可开关商店
+
+文件：`src/modules/ui/hudShop.ts`
+- 购买/卖花逻辑沿用并兼容 10 种种子（价格读取 `SEED_CONFIG`）
+
+四、种子与资源
+-------------
+文件：`src/modules/garden/types.ts`
+- `SeedId` 扩展为 10 种：
+  - `tulip, rose, sunflower, hibiscus, cherry_blossom, daisy, lotus, hyacinth, white_flower, rosette`
+- `SEED_CONFIG` 每种包含：
+  - `label, seedPrice, sellBase, color, icon`
+- `PlotRuntime` 最终字段包含：
+  - `seedId, stage, growProgress, waterSaturation, needsWater, needsFertilizer, fertilizerCooldown, waterFxTime, fertilizerFxTime, blessBonus`
+
+文件：`public/assets/icons/*.svg`
+- 10 个图标文件（与种子一一对应）
+- `public/assets/icons/ATTRIBUTION.md` 记录来源与许可（OpenMoji）
+
+五、账号初始数据与地块规模
+------------------------
+文件：`src/game/GameState.ts`
+- 初始每种种子库存 = 10
+- 自家地块 `plots` = 20 个
+
+文件：`src/modules/garden/GardenPlots.ts`
+- 地块布局为 5x4（共 20 块）
+
+六、成长机制（最终规则）
+----------------------
+文件：`src/modules/garden/GardenGrowth.ts`
+- 时间生长仅作用于 `stage === 1`（1->2）
+- 2->3 不走时间，依赖浇水动作
+- 3->4 不走时间，依赖施肥动作
+- 每帧衰减特效计时：
+  - `waterFxTime`
+  - `fertilizerFxTime`
+  - `fertilizerCooldown`
+
+文件：`src/modules/garden/GardenWatering.ts`
+- 第二阶段且 `needsWater=true` 时：
+  - 浇水后立刻升到第三阶段
+  - 开启 `needsFertilizer=true`
+  - 设置施肥冷却 `fertilizerCooldown`（当前为 6.5 秒）
+  - 触发浇水特效计时
+
+文件：`src/modules/garden/GardenFertilizing.ts`（新增）
+- 第三阶段且 `needsFertilizer=true` 且 `fertilizerCooldown<=0`：
+  - 施肥后立刻到第四阶段（成熟）
+  - 触发施肥特效计时
+
+文件：`src/modules/garden/GardenModule.ts`
+- 点击分发：
+  - stage0 -> 种植
+  - stage1/2 -> 浇水
+  - stage3 -> 施肥
+  - stage4 -> 收获
+- 把玩家位置传给可视化系统（用于近距离 3D 提示）
+
+七、模型差异化与提示/特效
+-----------------------
+文件：`src/modules/garden/GardenVisuals.ts`
+- 10 种种子使用不同花冠几何（形状差异）
+- 提示逻辑：
+  - 第二阶段需要浇水时显示浇水提示
+  - 第三阶段仅在施肥冷却结束后显示施肥提示
+- 3D 近距离提示牌：
+  - 玩家靠近目标地块时在花附近显示
+  - 文案：`需要浇水` / `需要施肥` / 冷却中显示 `等待施肥 X.Xs`
+  - 已调小牌面并增大字体（当前 40px）
+- 特效：
+  - 浇水：水滴粒子（更大、更亮、范围更广）
+  - 施肥：颗粒粒子（更大、更亮、范围更广）
+
+文件：`src/modules/garden/GardenPlots.ts`
+- 增加可视对象：
+  - `WaterHint`
+  - `FertilizerHint`
+  - `WaterFx` 粒子组
+  - `FertilizerFx` 粒子组
+  - `ActionPrompt`（Canvas Sprite）
+
+八、状态复位一致性（必须同步）
+----------------------------
+以下文件在“地块重置”时都要同步清理新字段：
+- `src/modules/garden/GardenPlanting.ts`
+- `src/modules/garden/GardenHarvest.ts`
+- `src/modules/social/socialSteal.ts`
+- `src/modules/social/socialMock.ts`
+- `src/game/GameState.ts`（初始化）
+
+重置字段至少包含：
+- `needsWater = false`
+- `needsFertilizer = false`
+- `fertilizerCooldown = 0`
+- `waterFxTime = 0`
+- `fertilizerFxTime = 0`
+
+九、对方 AI 可直接验收的行为清单
+------------------------------
+1) 打开商店：可点击，可购买，可关闭，货架可动（拖拽/滚轮/左右按钮）
+2) 10 种种子都有图标，种子按钮显示库存
+3) 每种花模型形状明显不同
+4) 生长规则：
+   - 1->2 自动
+   - 2->3 浇水立即进
+   - 3->4 施肥立即进（但浇水后有等待时间）
+5) 第二阶段/第三阶段有正确提示，且靠近地块会出现 3D 提示牌
+6) 浇水和施肥特效明显可见（大范围）
+
+十、建议对方 AI 最后执行
+---------------------
+命令：
+`npx vite build`
+
+如编译通过，说明迁移基本完成。

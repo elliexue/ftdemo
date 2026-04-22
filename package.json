@@ -1,0 +1,20 @@
+{
+  "name": "three-vite-modular-demo",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "download-assets": "node scripts/download-assets.mjs"
+  },
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.183.1",
+    "typescript": "~5.6.3",
+    "vite": "^6.0.3"
+  }
+}

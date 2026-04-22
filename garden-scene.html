@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>花房场景预览</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0f1314;
+      }
+
+      #app {
+        width: 100%;
+        height: 100%;
+      }
+
+      canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      if (window.location.protocol === 'file:') {
+        const normalizedPath = window.location.pathname.replace(/\\/g, '/');
+        if (!normalizedPath.endsWith('/dist/garden-scene.html')) {
+          window.location.replace(new URL('./dist/garden-scene.html', window.location.href).href);
+        }
+      }
+    </script>
+    <script type="module" src="./src/showcase/main_big_garden.ts"></script>
+  </body>
+</html>

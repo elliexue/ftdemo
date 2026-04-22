@@ -1,0 +1,17 @@
+本目录下的示例模型来源（请保留本说明；商用前请自行核对各站最新许可）：
+
+1) soldier.glb
+   - 来源：three.js 官方示例资源
+   - 页面：https://threejs.org/examples/#webgl_animation_skinning_blending
+
+2) duck.glb
+   - 来源：Khronos glTF Sample Models（Duck）
+   - 仓库：https://github.com/KhronosGroup/glTF-Sample-Models
+
+3) lantern.glb
+   - 来源：Khronos glTF Sample Models（Lantern）
+   - 仓库：https://github.com/KhronosGroup/glTF-Sample-Models
+
+说明：
+- 游戏在浏览器里运行时不会自动从网上拉模型，只读取本文件夹已有文件。
+- 开发机可执行：npm run download-assets（需外网）。无网环境请由一人下载后把整个 public\assets 打包分发。

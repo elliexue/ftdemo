@@ -1,0 +1,47 @@
+
+【操作】WASD 只负责走动；用鼠标右键在画面上拖拽可环视角色；左键点地块种花/浇水/收获。
+
+【第一次在本电脑运行】
+1. 装好 Node.js 后，在本文件夹地址栏输入 cmd 回车（或右键「在此处打开终端」）。
+2. 输入：npm install    （只需做一次，装依赖）
+3. 双击 run.bat，或输入：npm run dev
+4. 浏览器打开窗口里显示的地址（一般是 http://localhost:5173）
+
+【换 3D 模型】
+把 .glb 文件放进文件夹：public\assets\
+代码里写路径：assets/文件名.glb（参考 AssetLoader.ts 里的 loadGLTF）
+
+【所有人做完后，只合并一次】
+1. 把各人写的模块 .ts 文件都放进：src\modules\
+2. 只改一个文件：src\modules\Registry.ts
+   - 顶部多写一行：import { 某人的类名 } from './某人的文件名'
+   - 下面数组里多写一行：new 某人的类名(),
+3. 不要改 src\core\ 里的文件（除非大家都知道要改同一段）
+
+【流程图 Demo 改哪改哪（避免多人改同一文件）】
+- 浇水：src\modules\garden\GardenWatering.ts
+- 种植：src\modules\garden\GardenPlanting.ts
+- 生长节奏：src\modules\garden\GardenGrowth.ts
+- 收获品质：src\modules\garden\GardenHarvest.ts
+- 天气：src\modules\garden\GardenWeather.ts
+- 花精灵倍率：src\modules\garden\GardenSpiritBuff.ts
+- 地块摆放/模型：src\modules\garden\GardenPlots.ts、GardenVisuals.ts
+- 偷花：src\modules\social\socialSteal.ts
+- 祝福：src\modules\social\socialBless.ts
+- 好友初始数据：src\modules\social\socialMock.ts
+- 插花规则：src\modules\arrangement\arrangementLogic.ts
+- 商店价格：src\modules\ui\hudShop.ts
+- 界面排版：src\modules\ui\UiModule.ts
+- 全局数据字段：src\game\GameState.ts（合并时小心冲突）
+
+【AI 接力规则（务必先读）】
+1. 下一位 AI 先看：NEXT_AI_GUIDE.md
+2. 每次产出后必须记录：AI_CHANGELOG.md
+   - 记录写简短：只写最终实现结果，不写中间过程
+3. 默认只在 src\modules\** 写玩法代码；除非用户明确要求，否则不要改 src\core\**
+4. 如需新增玩法，优先单文件模块，最后只在 src\modules\Registry.ts 做一次注册合并
+5. 上下文快满时，务必在 AI_CHANGELOG.md 的“Next handoff”写清楚：
+   - 当前做到哪一步
+   - 还差哪一步
+   - 下一位 AI 直接改哪些文件
+6. 是否交接给其他人的 AI 由用户决定；用户未宣布“工程完成”前，按当前工程连续迭代
