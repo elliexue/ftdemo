@@ -50,7 +50,8 @@ export function getRendererOptions(profile: PerformanceProfile): THREE.WebGLRend
 
 export function applyRendererProfile(renderer: THREE.WebGLRenderer, profile: PerformanceProfile): void {
   resizeRenderer(renderer, profile, window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
+  // Prioritize frame stability over shadow quality on this project.
+  renderer.shadowMap.enabled = false;
   renderer.shadowMap.type = profile.shadowType;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;

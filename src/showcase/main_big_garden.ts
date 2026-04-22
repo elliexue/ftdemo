@@ -25,7 +25,317 @@ function toPastelColor(color: THREE.Color): THREE.Color {
   return out;
 }
 
+type SharedStandardMaterialOptions = {
+  color: number;
+  roughness?: number;
+  metalness?: number;
+  emissive?: number;
+  emissiveIntensity?: number;
+  transparent?: boolean;
+  opacity?: number;
+  depthWrite?: boolean;
+  depthTest?: boolean;
+  side?: THREE.Side;
+};
+
+type SharedBasicMaterialOptions = {
+  color: number;
+  transparent?: boolean;
+  opacity?: number;
+  depthWrite?: boolean;
+  depthTest?: boolean;
+  side?: THREE.Side;
+};
+
+const sharedStaticStandardMaterials = new Map<string, THREE.MeshStandardMaterial>();
+const sharedStaticBasicMaterials = new Map<string, THREE.MeshBasicMaterial>();
+const sharedToyMaterials = new Map<string, THREE.MeshToonMaterial>();
+const sharedBoxGeometries = new Map<string, THREE.BoxGeometry>();
+const sharedSphereGeometries = new Map<string, THREE.SphereGeometry>();
+const sharedCylinderGeometries = new Map<string, THREE.CylinderGeometry>();
+const sharedCircleGeometries = new Map<string, THREE.CircleGeometry>();
+const sharedRingGeometries = new Map<string, THREE.RingGeometry>();
+const sharedTorusGeometries = new Map<string, THREE.TorusGeometry>();
+const sharedOctaGeometries = new Map<string, THREE.OctahedronGeometry>();
+
+function getSharedStaticStandardMaterial(options: SharedStandardMaterialOptions): THREE.MeshStandardMaterial {
+  const key = [
+    options.color,
+    options.roughness ?? '',
+    options.metalness ?? '',
+    options.emissive ?? '',
+    options.emissiveIntensity ?? '',
+    options.transparent ?? '',
+    options.opacity ?? '',
+    options.depthWrite ?? '',
+    options.depthTest ?? '',
+    options.side ?? '',
+  ].join('|');
+  let material = sharedStaticStandardMaterials.get(key);
+  if (!material) {
+    material = new THREE.MeshStandardMaterial(options);
+    sharedStaticStandardMaterials.set(key, material);
+  }
+  return material;
+}
+
+function getSharedStaticBasicMaterial(options: SharedBasicMaterialOptions): THREE.MeshBasicMaterial {
+  const key = [
+    options.color,
+    options.transparent ?? '',
+    options.opacity ?? '',
+    options.depthWrite ?? '',
+    options.depthTest ?? '',
+    options.side ?? '',
+  ].join('|');
+  let material = sharedStaticBasicMaterials.get(key);
+  if (!material) {
+    material = new THREE.MeshBasicMaterial(options);
+    sharedStaticBasicMaterials.set(key, material);
+  }
+  return material;
+}
+
+function getSharedBoxGeometry(width: number, height: number, depth: number): THREE.BoxGeometry {
+  const key = `${width}|${height}|${depth}`;
+  let geometry = sharedBoxGeometries.get(key);
+  if (!geometry) {
+    geometry = new THREE.BoxGeometry(width, height, depth);
+    sharedBoxGeometries.set(key, geometry);
+  }
+  return geometry;
+}
+
+function getSharedSphereGeometry(
+  widthSegments: number,
+  heightSegments: number,
+  phiStart = 0,
+  phiLength = Math.PI * 2,
+  thetaStart = 0,
+  thetaLength = Math.PI,
+): THREE.SphereGeometry {
+  const key = `${widthSegments}|${heightSegments}|${phiStart}|${phiLength}|${thetaStart}|${thetaLength}`;
+  let geometry = sharedSphereGeometries.get(key);
+  if (!geometry) {
+    geometry = new THREE.SphereGeometry(1, widthSegments, heightSegments, phiStart, phiLength, thetaStart, thetaLength);
+    sharedSphereGeometries.set(key, geometry);
+  }
+  return geometry;
+}
+
+function getSharedCylinderGeometry(
+  radialSegments: number,
+  radiusTopRatio: number,
+  openEnded = false,
+  thetaStart = 0,
+  thetaLength = Math.PI * 2,
+): THREE.CylinderGeometry {
+  const key = `${radialSegments}|${radiusTopRatio}|${openEnded}|${thetaStart}|${thetaLength}`;
+  let geometry = sharedCylinderGeometries.get(key);
+  if (!geometry) {
+    geometry = new THREE.CylinderGeometry(radiusTopRatio, 1, 1, radialSegments, 1, openEnded, thetaStart, thetaLength);
+    sharedCylinderGeometries.set(key, geometry);
+  }
+  return geometry;
+}
+
+function getSharedCircleGeometry(segments: number): THREE.CircleGeometry {
+  let geometry = sharedCircleGeometries.get(`${segments}`);
+  if (!geometry) {
+    geometry = new THREE.CircleGeometry(1, segments);
+    sharedCircleGeometries.set(`${segments}`, geometry);
+  }
+  return geometry;
+}
+
+function getSharedRingGeometry(
+  innerRatio: number,
+  thetaSegments: number,
+  thetaStart = 0,
+  thetaLength = Math.PI * 2,
+): THREE.RingGeometry {
+  const key = `${innerRatio}|${thetaSegments}|${thetaStart}|${thetaLength}`;
+  let geometry = sharedRingGeometries.get(key);
+  if (!geometry) {
+    geometry = new THREE.RingGeometry(innerRatio, 1, thetaSegments, 1, thetaStart, thetaLength);
+    sharedRingGeometries.set(key, geometry);
+  }
+  return geometry;
+}
+
+function getSharedTorusGeometry(
+  tubeRatio: number,
+  radialSegments: number,
+  tubularSegments: number,
+  arc: number,
+): THREE.TorusGeometry {
+  const key = `${tubeRatio}|${radialSegments}|${tubularSegments}|${arc}`;
+  let geometry = sharedTorusGeometries.get(key);
+  if (!geometry) {
+    geometry = new THREE.TorusGeometry(1, tubeRatio, radialSegments, tubularSegments, arc);
+    sharedTorusGeometries.set(key, geometry);
+  }
+  return geometry;
+}
+
+function getSharedOctaGeometry(detail = 0): THREE.OctahedronGeometry {
+  let geometry = sharedOctaGeometries.get(`${detail}`);
+  if (!geometry) {
+    geometry = new THREE.OctahedronGeometry(1, detail);
+    sharedOctaGeometries.set(`${detail}`, geometry);
+  }
+  return geometry;
+}
+
+function makeScaledSphere(
+  radius: number,
+  material: THREE.Material,
+  widthSegments: number,
+  heightSegments: number,
+  phiStart = 0,
+  phiLength = Math.PI * 2,
+  thetaStart = 0,
+  thetaLength = Math.PI,
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    getSharedSphereGeometry(widthSegments, heightSegments, phiStart, phiLength, thetaStart, thetaLength),
+    material,
+  );
+  mesh.scale.setScalar(radius);
+  return mesh;
+}
+
+function makeScaledCylinder(
+  radiusTop: number,
+  radiusBottom: number,
+  height: number,
+  radialSegments: number,
+  material: THREE.Material,
+  openEnded = false,
+): THREE.Mesh {
+  const baseRadius = Math.max(radiusBottom, 1e-4);
+  const mesh = new THREE.Mesh(
+    getSharedCylinderGeometry(radialSegments, radiusTop / baseRadius, openEnded),
+    material,
+  );
+  mesh.scale.set(baseRadius, height, baseRadius);
+  return mesh;
+}
+
+function makeScaledCircle(radius: number, segments: number, material: THREE.Material): THREE.Mesh {
+  const mesh = new THREE.Mesh(getSharedCircleGeometry(segments), material);
+  mesh.scale.setScalar(radius);
+  return mesh;
+}
+
+function makeScaledRing(
+  innerRadius: number,
+  outerRadius: number,
+  thetaSegments: number,
+  material: THREE.Material,
+  thetaStart = 0,
+  thetaLength = Math.PI * 2,
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    getSharedRingGeometry(innerRadius / Math.max(outerRadius, 1e-4), thetaSegments, thetaStart, thetaLength),
+    material,
+  );
+  mesh.scale.setScalar(outerRadius);
+  return mesh;
+}
+
+function makeScaledTorus(
+  radius: number,
+  tubeRadius: number,
+  radialSegments: number,
+  tubularSegments: number,
+  arc: number,
+  material: THREE.Material,
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    getSharedTorusGeometry(tubeRadius / Math.max(radius, 1e-4), radialSegments, tubularSegments, arc),
+    material,
+  );
+  mesh.scale.setScalar(radius);
+  return mesh;
+}
+
+function makeScaledOctahedron(radius: number, detail: number, material: THREE.Material): THREE.Mesh {
+  const mesh = new THREE.Mesh(getSharedOctaGeometry(detail), material);
+  mesh.scale.setScalar(radius);
+  return mesh;
+}
+
+type StaticInstance = {
+  px: number;
+  py: number;
+  pz: number;
+  sx?: number;
+  sy?: number;
+  sz?: number;
+  rx?: number;
+  ry?: number;
+  rz?: number;
+};
+
+function addInstancedSet(
+  root: THREE.Object3D,
+  geometry: THREE.BufferGeometry,
+  material: THREE.Material,
+  instances: StaticInstance[],
+  options?: { castShadow?: boolean; receiveShadow?: boolean },
+): THREE.InstancedMesh | null {
+  if (instances.length === 0) return null;
+  const mesh = new THREE.InstancedMesh(geometry, material, instances.length);
+  const dummy = new THREE.Object3D();
+  for (let i = 0; i < instances.length; i++) {
+    const item = instances[i]!;
+    dummy.position.set(item.px, item.py, item.pz);
+    dummy.rotation.set(item.rx ?? 0, item.ry ?? 0, item.rz ?? 0);
+    dummy.scale.set(item.sx ?? 1, item.sy ?? item.sx ?? 1, item.sz ?? item.sx ?? 1);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.castShadow = options?.castShadow ?? false;
+  mesh.receiveShadow = options?.receiveShadow ?? false;
+  root.add(mesh);
+  return mesh;
+}
+
+function getToyMaterialKey(material: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial): string {
+  const base = toPastelColor(material.color ?? new THREE.Color(0xffffff));
+  return [
+    base.getHexString(),
+    material.transparent,
+    material.opacity,
+    material.depthWrite,
+    material.depthTest,
+    material.side,
+  ].join('|');
+}
+
+function getSharedToyMaterial(material: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial): THREE.MeshToonMaterial {
+  const key = getToyMaterialKey(material);
+  let toon = sharedToyMaterials.get(key);
+  if (!toon) {
+    const base = toPastelColor(material.color ?? new THREE.Color(0xffffff));
+    toon = new THREE.MeshToonMaterial({
+      color: base,
+      emissive: base.clone().multiplyScalar(0.03),
+      transparent: material.transparent,
+      opacity: material.opacity,
+      depthWrite: material.depthWrite,
+      depthTest: material.depthTest,
+      side: material.side,
+    });
+    sharedToyMaterials.set(key, toon);
+  }
+  return toon;
+}
+
 function applyToyStyle(root: THREE.Object3D, profile: PerformanceProfile): void {
+  const replaced = new Set<THREE.Material>();
   root.traverse((obj) => {
     if (!(obj instanceof THREE.Mesh)) return;
     const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -33,16 +343,15 @@ function applyToyStyle(root: THREE.Object3D, profile: PerformanceProfile): void 
       if (!(m instanceof THREE.MeshStandardMaterial || m instanceof THREE.MeshBasicMaterial)) {
         return m;
       }
-      const base = toPastelColor((m as THREE.MeshStandardMaterial).color ?? new THREE.Color(0xffffff));
-      const toon = new THREE.MeshToonMaterial({
-        color: base,
-        emissive: base.clone().multiplyScalar(0.03),
-      });
-      return toon;
+      replaced.add(m);
+      return getSharedToyMaterial(m);
     });
     obj.material = Array.isArray(obj.material) ? toonMaterials : toonMaterials[0]!;
     obj.receiveShadow = true;
   });
+  for (const material of replaced) {
+    material.dispose();
+  }
   optimizeShadowCasting(root, profile.minShadowCasterRadius);
 }
 
@@ -56,10 +365,21 @@ function disableRealtimeShadows(root: THREE.Object3D): void {
 
 function makeFlower(color: number): THREE.Group {
   const g = new THREE.Group();
-  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 0.56, 10), new THREE.MeshStandardMaterial({ color: 0x4d8650, roughness: 0.68 }));
+  const stem = makeScaledCylinder(
+    0.02,
+    0.03,
+    0.56,
+    10,
+    getSharedStaticStandardMaterial({ color: 0x4d8650, roughness: 0.68 }),
+  );
   stem.position.y = 0.28;
   stem.castShadow = true;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.1, roughness: 0.5 }));
+  const head = makeScaledSphere(
+    0.1,
+    getSharedStaticStandardMaterial({ color, emissive: color, emissiveIntensity: 0.1, roughness: 0.5 }),
+    12,
+    10,
+  );
   head.position.y = 0.62;
   head.castShadow = true;
   g.add(stem, head);
@@ -141,6 +461,7 @@ const sharedPlantGeometries = {
   ring: new THREE.RingGeometry(0.5, 1, 22),
   dodeca: new THREE.DodecahedronGeometry(0.5),
 };
+const sharedPlantGeometrySet = new Set<THREE.BufferGeometry>(Object.values(sharedPlantGeometries));
 
 const getSharedPlantToonMaterial = (color: number): THREE.MeshToonMaterial => {
   let mat = sharedPlantToonMaterials.get(color);
@@ -150,6 +471,31 @@ const getSharedPlantToonMaterial = (color: number): THREE.MeshToonMaterial => {
   }
   return mat;
 };
+
+const isSharedPlantGeometry = (geometry: THREE.BufferGeometry): boolean =>
+  sharedPlantGeometrySet.has(geometry);
+
+const isSharedPlantMaterial = (material: THREE.Material): boolean => {
+  for (const shared of sharedPlantToonMaterials.values()) {
+    if (shared === material) return true;
+  }
+  return false;
+};
+
+function disposePlantVisual(root: THREE.Object3D): void {
+  root.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    if (obj.geometry && !isSharedPlantGeometry(obj.geometry)) {
+      obj.geometry.dispose();
+    }
+    const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (const material of materials) {
+      if (material && !isSharedPlantMaterial(material)) {
+        material.dispose();
+      }
+    }
+  });
+}
 
 function createChibiPreviewPlayer(): ChibiPreviewRig {
   const root = new THREE.Group();
@@ -352,8 +698,8 @@ function addPlantingSubplots(
     roughness: 0.9,
     metalness: 0.04,
     transparent: true,
-    opacity: 0,
-    depthWrite: false,
+    opacity: 0.32,
+    depthWrite: true,
   });
   const capGeo = new THREE.BoxGeometry(inset * 1.28, 0.062, inset * 1.28);
 
@@ -375,7 +721,7 @@ function addPlantingSubplots(
       cap.position.set(x, topY + 0.026, z);
       cap.receiveShadow = true;
       cap.castShadow = false;
-      cap.visible = false;
+      cap.visible = true;
       cap.userData.plotCell = true;
       cap.userData.planted = false;
       cap.userData.seedId = null;
@@ -432,12 +778,14 @@ function addFenceLoop(root: THREE.Group, width: number, depth: number): void {
 }
 
 function scatterPebblePath(root: THREE.Group, points: THREE.Vector3[], width = 0.46): void {
-  const roadMat = new THREE.MeshStandardMaterial({ color: 0xf0c35f, roughness: 0.96 });
-  const edgeMat = new THREE.MeshStandardMaterial({ color: 0xd9a956, roughness: 0.95 });
-  const pebbleMat = new THREE.MeshStandardMaterial({ color: 0xf5ecdd, roughness: 0.96 });
+  const roadMat = getSharedStaticStandardMaterial({ color: 0xf0c35f, roughness: 0.96 });
+  const edgeMat = getSharedStaticStandardMaterial({ color: 0xd9a956, roughness: 0.95 });
+  const pebbleMat = getSharedStaticStandardMaterial({ color: 0xf5ecdd, roughness: 0.96 });
   const roadY = 0.392;
   const edgeY = 0.391;
   const stoneY = 0.435;
+  const roadInstances: StaticInstance[] = [];
+  const edgeInstances: StaticInstance[] = [];
   for (let i = 0; i < points.length - 1; i++) {
     const a = points[i]!;
     const b = points[i + 1]!;
@@ -449,24 +797,21 @@ function scatterPebblePath(root: THREE.Group, points: THREE.Vector3[], width = 0
       const normal = new THREE.Vector3(-tangent.z, 0, tangent.x);
       const baseX = THREE.MathUtils.lerp(a.x, b.x, t);
       const baseZ = THREE.MathUtils.lerp(a.z, b.z, t);
-      const roadPatch = new THREE.Mesh(new THREE.CircleGeometry(width * 1.2, 22), roadMat);
-      roadPatch.rotation.x = -Math.PI / 2;
-      roadPatch.position.set(baseX, roadY, baseZ);
-      roadPatch.receiveShadow = true;
-      root.add(roadPatch);
-
-      const edgePatch = new THREE.Mesh(new THREE.RingGeometry(width * 1.08, width * 1.3, 20), edgeMat);
-      edgePatch.rotation.x = -Math.PI / 2;
-      edgePatch.position.set(baseX, edgeY, baseZ);
-      edgePatch.receiveShadow = true;
-      root.add(edgePatch);
+      roadInstances.push({ px: baseX, py: roadY, pz: baseZ, sx: width * 1.2, sy: width * 1.2, sz: 1, rx: -Math.PI / 2 });
+      edgeInstances.push({ px: baseX, py: edgeY, pz: baseZ, sx: width * 1.3, sy: width * 1.3, sz: 1, rx: -Math.PI / 2 });
 
       const offset = (Math.random() - 0.5) * width * 0.76;
       const x = baseX + normal.x * offset + (Math.random() - 0.5) * 0.05;
       const z = baseZ + normal.z * offset + (Math.random() - 0.5) * 0.05;
       // Reduce stepping-stone density for cleaner visual rhythm.
       if (Math.random() < 0.12) {
-        const stone = new THREE.Mesh(new THREE.CylinderGeometry(0.2 + Math.random() * 0.08, 0.23 + Math.random() * 0.08, 0.1, 10), pebbleMat);
+        const stone = makeScaledCylinder(
+          0.2 + Math.random() * 0.08,
+          0.23 + Math.random() * 0.08,
+          0.1,
+          10,
+          pebbleMat,
+        );
         stone.position.set(x, stoneY + Math.random() * 0.01, z);
         stone.rotation.y = Math.random() * Math.PI;
         stone.castShadow = true;
@@ -475,6 +820,8 @@ function scatterPebblePath(root: THREE.Group, points: THREE.Vector3[], width = 0
       }
     }
   }
+  addInstancedSet(root, getSharedCircleGeometry(22), roadMat, roadInstances, { receiveShadow: true });
+  addInstancedSet(root, getSharedRingGeometry((width * 1.08) / (width * 1.3), 20), edgeMat, edgeInstances, { receiveShadow: true });
 }
 
 function addSecretPebblePath(root: THREE.Group): void {
@@ -494,7 +841,8 @@ function addSecretPebblePath(root: THREE.Group): void {
   ];
   scatterPebblePath(root, path, 0.42);
 
-  const sidePebbleMat = new THREE.MeshStandardMaterial({ color: 0xe4dac8, roughness: 0.98 });
+  const sidePebbleMat = getSharedStaticStandardMaterial({ color: 0xe4dac8, roughness: 0.98 });
+  const pebbleInstances: StaticInstance[] = [];
   for (let i = 0; i < path.length - 1; i++) {
     const a = path[i]!;
     const b = path[i + 1]!;
@@ -507,36 +855,35 @@ function addSecretPebblePath(root: THREE.Group): void {
       for (const side of [-1, 1] as const) {
         if (Math.random() < 0.5) continue;
         const d = 0.34 + Math.random() * 0.14;
-        const pebble = new THREE.Mesh(
-          new THREE.SphereGeometry(0.05 + Math.random() * 0.03, 8, 6),
-          sidePebbleMat,
-        );
-        pebble.position.set(px + normal.x * d * side, 0.42, pz + normal.z * d * side);
-        pebble.castShadow = true;
-        root.add(pebble);
+        const radius = 0.05 + Math.random() * 0.03;
+        pebbleInstances.push({
+          px: px + normal.x * d * side,
+          py: 0.42,
+          pz: pz + normal.z * d * side,
+          sx: radius,
+          sy: radius,
+          sz: radius,
+        });
       }
     }
   }
+  addInstancedSet(root, getSharedSphereGeometry(8, 6), sidePebbleMat, pebbleInstances, { castShadow: true });
 }
 
 function addMiniFenceRing(root: THREE.Group, x: number, z: number, r: number): void {
-  const postMat = new THREE.MeshStandardMaterial({ color: 0xc59667, roughness: 0.9 });
-  const railMat = new THREE.MeshStandardMaterial({ color: 0xb88657, roughness: 0.88 });
+  const postMat = getSharedStaticStandardMaterial({ color: 0xc59667, roughness: 0.9 });
+  const railMat = getSharedStaticStandardMaterial({ color: 0xb88657, roughness: 0.88 });
   const count = Math.max(16, Math.floor(r * 34));
-  const postGeo = new THREE.CylinderGeometry(0.028, 0.032, 0.34, 7);
   for (let i = 0; i < count; i++) {
     const a = (i / count) * Math.PI * 2;
     const px = x + Math.cos(a) * (r + 0.12);
     const pz = z + Math.sin(a) * (r + 0.12);
-    const p = new THREE.Mesh(postGeo, postMat);
+    const p = makeScaledCylinder(0.028, 0.032, 0.34, 7, postMat);
     p.position.set(px, 0.43, pz);
     p.castShadow = true;
     root.add(p);
   }
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(r + 0.12, 0.018, 8, 80),
-    railMat,
-  );
+  const ring = makeScaledTorus(r + 0.12, 0.018, 8, 80, Math.PI * 2, railMat);
   ring.rotation.x = Math.PI / 2;
   ring.position.set(x, 0.55, z);
   root.add(ring);
@@ -559,7 +906,7 @@ function addGroundZone(root: THREE.Group, x: number, z: number, r: number, _flow
   const shape = new THREE.Shape(outline);
   const soil = new THREE.Mesh(
     new THREE.ShapeGeometry(shape),
-    new THREE.MeshStandardMaterial({ color: 0x6f5134, roughness: 0.98 }),
+    getSharedStaticStandardMaterial({ color: 0x6f5134, roughness: 0.98 }),
   );
   soil.rotation.x = -Math.PI / 2;
   soil.position.set(x, 0.37, z);
@@ -570,9 +917,9 @@ function addGroundZone(root: THREE.Group, x: number, z: number, r: number, _flow
   addPlantingSubplots(root, worldPolygon, { step: 0.56, topY: 0.395, maxPlots: 56 });
 
   const boundaryPoints = outline.map((p) => new THREE.Vector3(x + p.x, 0.39, z + p.y));
-  const fencePostMat = new THREE.MeshStandardMaterial({ color: 0xc79b6f, roughness: 0.88 });
-  const fenceRailMat = new THREE.MeshStandardMaterial({ color: 0xb88b60, roughness: 0.86 });
-  const postGeo = new THREE.BoxGeometry(0.052, 0.44, 0.052);
+  const fencePostMat = getSharedStaticStandardMaterial({ color: 0xc79b6f, roughness: 0.88 });
+  const fenceRailMat = getSharedStaticStandardMaterial({ color: 0xb88b60, roughness: 0.86 });
+  const postGeo = getSharedBoxGeometry(0.052, 0.44, 0.052);
 
   for (let i = 0; i < boundaryPoints.length; i++) {
     const p = boundaryPoints[i]!;
@@ -611,7 +958,7 @@ function addPolygonPlantingZone(root: THREE.Group, polygon: THREE.Vector2[], _fl
   const shape = new THREE.Shape(polygon);
   const soil = new THREE.Mesh(
     new THREE.ShapeGeometry(shape),
-    new THREE.MeshStandardMaterial({ color: 0x6f5134, roughness: 0.98 }),
+    getSharedStaticStandardMaterial({ color: 0x6f5134, roughness: 0.98 }),
   );
   // Use +PI/2 here to keep drawn XY polygon aligned with world XZ preview direction.
   soil.rotation.x = Math.PI / 2;
@@ -622,9 +969,8 @@ function addPolygonPlantingZone(root: THREE.Group, polygon: THREE.Vector2[], _fl
   addPlantingSubplots(root, polygon, { step: 0.5, topY: 0.395, maxPlots: 120 });
 
   // Build fence exactly on user-drawn segments (no resampling, no smoothing).
-  const fencePostMat = new THREE.MeshStandardMaterial({ color: 0xc89762, roughness: 0.9 });
-  const fenceRailMat = new THREE.MeshStandardMaterial({ color: 0xb98554, roughness: 0.88 });
-  const postBodyGeo = new THREE.BoxGeometry(0.072, 0.24, 0.03);
+  const fencePostMat = getSharedStaticStandardMaterial({ color: 0xc89762, roughness: 0.9 });
+  const postBodyGeo = getSharedBoxGeometry(0.072, 0.24, 0.03);
   const postCapGeo = new THREE.CapsuleGeometry(0.036, 0.01, 4, 8);
 
   const placePicket = (x: number, z: number, yaw: number): void => {
@@ -795,8 +1141,8 @@ function addGroundZonesWithClearance(
 
 function addFlowerWallZone(root: THREE.Group, x: number, z: number, width: number, height: number): void {
   const frame = new THREE.Mesh(
-    new THREE.BoxGeometry(width, height, 0.24),
-    new THREE.MeshStandardMaterial({ color: 0xf4f1e6, roughness: 0.86 }),
+    getSharedBoxGeometry(width, height, 0.24),
+    getSharedStaticStandardMaterial({ color: 0xf4f1e6, roughness: 0.86 }),
   );
   frame.position.set(x, height * 0.5 + 0.2, z);
   frame.castShadow = true;
@@ -805,40 +1151,43 @@ function addFlowerWallZone(root: THREE.Group, x: number, z: number, width: numbe
 
   const leafPalette = [0x78aa64, 0x8fc477, 0x9bd083];
   const flowerPalette = [0xffffff, 0xffe9af, 0xffc8d8, 0xcfe9ff];
+  const leafInstances = leafPalette.map(() => [] as StaticInstance[]);
   for (let i = 0; i < 170; i++) {
-    const leaf = new THREE.Mesh(
-      new THREE.SphereGeometry(0.07 + Math.random() * 0.08, 8, 6),
-      new THREE.MeshStandardMaterial({ color: leafPalette[i % leafPalette.length]!, roughness: 0.9 }),
-    );
-    leaf.position.set(
-      x + (Math.random() - 0.5) * (width * 0.92),
-      0.34 + Math.random() * (height * 0.9),
-      z + (Math.random() - 0.5) * 0.18,
-    );
-    root.add(leaf);
+    const radius = 0.07 + Math.random() * 0.08;
+    const px = x + (Math.random() - 0.5) * (width * 0.92);
+    const py = 0.34 + Math.random() * (height * 0.9);
+    const pz = z + (Math.random() - 0.5) * 0.18;
+    leafInstances[i % leafPalette.length]!.push({ px, py, pz, sx: radius, sy: radius, sz: radius });
     if (i % 3 === 0) {
       const f = makeFlower(flowerPalette[i % flowerPalette.length]!);
       f.scale.setScalar(0.26 + Math.random() * 0.15);
-      f.position.copy(leaf.position);
-      f.position.z += 0.14;
+      f.position.set(px, py, pz + 0.14);
       root.add(f);
     }
+  }
+  for (let i = 0; i < leafPalette.length; i++) {
+    addInstancedSet(
+      root,
+      getSharedSphereGeometry(8, 6),
+      getSharedStaticStandardMaterial({ color: leafPalette[i]!, roughness: 0.9 }),
+      leafInstances[i]!,
+    );
   }
 }
 
 function addWoodLatticeRoseWall(root: THREE.Group, x: number, z: number, width: number, height: number): void {
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0xb98e63, roughness: 0.9 });
-  const woodDarkMat = new THREE.MeshStandardMaterial({ color: 0xa67d57, roughness: 0.92 });
-  const vineMat = new THREE.MeshStandardMaterial({ color: 0x67924f, roughness: 0.88 });
-  const roseMat = new THREE.MeshStandardMaterial({ color: 0xea788f, roughness: 0.72 });
-  const roseMatB = new THREE.MeshStandardMaterial({ color: 0xff8ca1, roughness: 0.72 });
+  const woodMat = getSharedStaticStandardMaterial({ color: 0xb98e63, roughness: 0.9 });
+  const woodDarkMat = getSharedStaticStandardMaterial({ color: 0xa67d57, roughness: 0.92 });
+  const vineMat = getSharedStaticStandardMaterial({ color: 0x67924f, roughness: 0.88 });
+  const roseMat = getSharedStaticStandardMaterial({ color: 0xea788f, roughness: 0.72 });
+  const roseMatB = getSharedStaticStandardMaterial({ color: 0xff8ca1, roughness: 0.72 });
 
   const slatCount = Math.max(9, Math.floor(width / 0.42));
   const slatGap = width / slatCount;
   for (let i = 0; i < slatCount; i++) {
     const px = x - width * 0.5 + slatGap * (i + 0.5);
     const slat = new THREE.Mesh(
-      new THREE.BoxGeometry(slatGap * 0.68, height, 0.12),
+      getSharedBoxGeometry(slatGap * 0.68, height, 0.12),
       i % 2 === 0 ? woodMat : woodDarkMat,
     );
     slat.position.set(px, 0.2 + height * 0.5, z);
@@ -849,7 +1198,7 @@ function addWoodLatticeRoseWall(root: THREE.Group, x: number, z: number, width: 
 
   for (const y of [0.7, 1.45, 2.15]) {
     const rail = new THREE.Mesh(
-      new THREE.BoxGeometry(width + 0.16, 0.08, 0.1),
+      getSharedBoxGeometry(width + 0.16, 0.08, 0.1),
       woodDarkMat,
     );
     rail.position.set(x, 0.2 + y, z - 0.02);
@@ -857,46 +1206,52 @@ function addWoodLatticeRoseWall(root: THREE.Group, x: number, z: number, width: 
     root.add(rail);
   }
 
+  const vineInstances: StaticInstance[] = [];
+  const nodeInstances: StaticInstance[] = [];
+  const roseAInstances: StaticInstance[] = [];
+  const roseBInstances: StaticInstance[] = [];
   for (let i = 0; i < 210; i++) {
-    const vine = new THREE.Mesh(
-      new THREE.SphereGeometry(0.06 + Math.random() * 0.06, 8, 6),
-      vineMat,
-    );
+    const vineRadius = 0.06 + Math.random() * 0.06;
     const px = x + (Math.random() - 0.5) * (width * 0.96);
     const topHeavy = Math.random() * Math.random();
     const py = 0.45 + (height * 0.95) * (1 - topHeavy);
     const pz = z + (Math.random() - 0.5) * 0.22;
-    vine.position.set(px, py, pz);
-    root.add(vine);
+    vineInstances.push({ px, py, pz, sx: vineRadius, sy: vineRadius, sz: vineRadius });
 
     if (Math.random() < 0.52) {
       const dropLen = 0.2 + Math.random() * 0.95;
       const drops = 2 + Math.floor(Math.random() * 4);
       for (let d = 0; d < drops; d++) {
         const t = d / Math.max(1, drops - 1);
-        const node = new THREE.Mesh(
-          new THREE.SphereGeometry(0.04 + Math.random() * 0.03, 8, 6),
-          vineMat,
-        );
-        node.position.set(
-          px + (Math.random() - 0.5) * 0.08,
-          py - dropLen * t,
-          pz + (Math.random() - 0.5) * 0.08,
-        );
-        root.add(node);
+        const nodeRadius = 0.04 + Math.random() * 0.03;
+        nodeInstances.push({
+          px: px + (Math.random() - 0.5) * 0.08,
+          py: py - dropLen * t,
+          pz: pz + (Math.random() - 0.5) * 0.08,
+          sx: nodeRadius,
+          sy: nodeRadius,
+          sz: nodeRadius,
+        });
       }
     }
 
     if (i % 2 === 0) {
-      const rose = new THREE.Mesh(
-        new THREE.SphereGeometry(0.08 + Math.random() * 0.05, 10, 8),
-        i % 4 === 0 ? roseMat : roseMatB,
-      );
-      rose.position.set(px + (Math.random() - 0.5) * 0.1, py + (Math.random() - 0.5) * 0.08, pz + 0.09);
-      rose.castShadow = true;
-      root.add(rose);
+      const roseRadius = 0.08 + Math.random() * 0.05;
+      const target = i % 4 === 0 ? roseAInstances : roseBInstances;
+      target.push({
+        px: px + (Math.random() - 0.5) * 0.1,
+        py: py + (Math.random() - 0.5) * 0.08,
+        pz: pz + 0.09,
+        sx: roseRadius,
+        sy: roseRadius,
+        sz: roseRadius,
+      });
     }
   }
+  addInstancedSet(root, getSharedSphereGeometry(8, 6), vineMat, vineInstances);
+  addInstancedSet(root, getSharedSphereGeometry(8, 6), vineMat, nodeInstances);
+  addInstancedSet(root, getSharedSphereGeometry(10, 8), roseMat, roseAInstances, { castShadow: true });
+  addInstancedSet(root, getSharedSphereGeometry(10, 8), roseMatB, roseBInstances, { castShadow: true });
 }
 
 function addRosePergola(root: THREE.Group, x: number, z: number, angleY: number, scale = 1, rackId?: string): void {
@@ -906,10 +1261,10 @@ function addRosePergola(root: THREE.Group, x: number, z: number, angleY: number,
   g.scale.setScalar(scale);
   root.add(g);
 
-  const frameMat = new THREE.MeshStandardMaterial({ color: 0xf6f4ef, roughness: 0.82 });
-  const postGeo = new THREE.BoxGeometry(0.14, 2.1, 0.14);
-  const beamGeoX = new THREE.BoxGeometry(2.8, 0.14, 0.18);
-  const beamGeoZ = new THREE.BoxGeometry(0.18, 0.14, 2.0);
+  const frameMat = getSharedStaticStandardMaterial({ color: 0xf6f4ef, roughness: 0.82 });
+  const postGeo = getSharedBoxGeometry(0.14, 2.1, 0.14);
+  const beamGeoX = getSharedBoxGeometry(2.8, 0.14, 0.18);
+  const beamGeoZ = getSharedBoxGeometry(0.18, 0.14, 2.0);
 
   const postPts = [
     [-1.35, 1.05, -0.95],
@@ -945,8 +1300,8 @@ function addRosePergola(root: THREE.Group, x: number, z: number, angleY: number,
     roughness: 0.9,
     metalness: 0.03,
     transparent: true,
-    opacity: 0,
-    depthWrite: false,
+    opacity: 0.32,
+    depthWrite: true,
   });
   const laneXs = [-1.35, -0.67, 0, 0.67, 1.35] as const;
   const laneZs = [-0.95, 0.95] as const;
@@ -956,7 +1311,7 @@ function addRosePergola(root: THREE.Group, x: number, z: number, angleY: number,
       cap.position.set(lx, topY + 0.09, lz);
       cap.receiveShadow = true;
       cap.castShadow = false;
-      cap.visible = false;
+      cap.visible = true;
       cap.userData.plotCell = true;
       cap.userData.plotKind = 'rack';
       cap.userData.rackId = resolvedRackId;
@@ -969,14 +1324,14 @@ function addRosePergola(root: THREE.Group, x: number, z: number, angleY: number,
 }
 
 function addWallPlanters(root: THREE.Group, x: number, z: number, width: number): void {
-  const planterMat = new THREE.MeshStandardMaterial({ color: 0xc59667, roughness: 0.86 });
-  const soilMat = new THREE.MeshStandardMaterial({ color: 0x6f5134, roughness: 0.98 });
+  const planterMat = getSharedStaticStandardMaterial({ color: 0xc59667, roughness: 0.86 });
+  const soilMat = getSharedStaticStandardMaterial({ color: 0x6f5134, roughness: 0.98 });
   const count = Math.max(3, Math.floor(width / 1.25));
   const gap = width / count;
   for (let i = 0; i < count; i++) {
     const px = x - width * 0.5 + gap * (i + 0.5);
     const box = new THREE.Mesh(
-      new THREE.BoxGeometry(gap * 0.82, 0.3, 0.6),
+      getSharedBoxGeometry(gap * 0.82, 0.3, 0.6),
       planterMat,
     );
     box.position.set(px, 0.33, z + 0.34);
@@ -985,7 +1340,7 @@ function addWallPlanters(root: THREE.Group, x: number, z: number, width: number)
     root.add(box);
 
     const soil = new THREE.Mesh(
-      new THREE.BoxGeometry(gap * 0.72, 0.08, 0.48),
+      getSharedBoxGeometry(gap * 0.72, 0.08, 0.48),
       soilMat,
     );
     soil.position.set(px, 0.48, z + 0.34);
@@ -1025,16 +1380,16 @@ function addArchPlantingZone(root: THREE.Group, x: number, z: number): void {
   starBaseShape.closePath();
   const starBase = new THREE.Mesh(
     new THREE.ShapeGeometry(starBaseShape),
-    new THREE.MeshStandardMaterial({ color: 0xe9e0ca, roughness: 0.9 }),
+    getSharedStaticStandardMaterial({ color: 0xe9e0ca, roughness: 0.9 }),
   );
   starBase.rotation.x = -Math.PI / 2;
   starBase.position.y = 0.23;
   starBase.receiveShadow = true;
   rig.add(starBase);
 
-  const archMat = new THREE.MeshStandardMaterial({ color: 0xf5f2e8, roughness: 0.82 });
-  const vineLeaf = new THREE.MeshStandardMaterial({ color: 0x7fb56c, roughness: 0.88 });
-  const rosePetal = new THREE.MeshStandardMaterial({ color: 0xff9a56, roughness: 0.72 });
+  const archMat = getSharedStaticStandardMaterial({ color: 0xf5f2e8, roughness: 0.82 });
+  const vineLeaf = getSharedStaticStandardMaterial({ color: 0x7fb56c, roughness: 0.88 });
+  const rosePetal = getSharedStaticStandardMaterial({ color: 0xff9a56, roughness: 0.72 });
   const starRadiusAt = (theta: number, outer: number, inner: number): number => {
     const normalized = ((theta % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
     const sector = (normalized / (Math.PI * 2)) * 10;
@@ -1044,9 +1399,8 @@ function addArchPlantingZone(root: THREE.Group, x: number, z: number): void {
     return THREE.MathUtils.lerp(from, to, frac);
   };
 
-  const legGeo = new THREE.CylinderGeometry(0.09, 0.11, 2.7, 10);
-  const leftLeg = new THREE.Mesh(legGeo, archMat);
-  const rightLeg = new THREE.Mesh(legGeo, archMat);
+  const leftLeg = makeScaledCylinder(0.09, 0.11, 2.7, 10, archMat);
+  const rightLeg = makeScaledCylinder(0.09, 0.11, 2.7, 10, archMat);
   // Slight asymmetry makes the structure feel gently tilted.
   leftLeg.position.set(-2.1, 1.62, 0);
   rightLeg.position.set(2.1, 1.78, 0);
@@ -1090,23 +1444,20 @@ function addArchPlantingZone(root: THREE.Group, x: number, z: number): void {
   rig.add(starTop);
 
   // Merge moon-star lighting into the floral arch centerpiece.
-  const moonMat = new THREE.MeshStandardMaterial({
+  const moonMat = getSharedStaticStandardMaterial({
     color: 0xfff2c9,
     emissive: 0xffd88a,
     emissiveIntensity: 0.55,
     roughness: 0.35,
     metalness: 0.08,
   });
-  const moon = new THREE.Mesh(
-    new THREE.TorusGeometry(1.12, 0.14, 16, 96, Math.PI * 1.64),
-    moonMat,
-  );
+  const moon = makeScaledTorus(1.12, 0.14, 16, 96, Math.PI * 1.64, moonMat);
   moon.position.set(0.15, 2.32, 0.08);
   moon.rotation.z = -0.86;
   moon.rotation.y = -0.52;
   rig.add(moon);
 
-  const starMat = new THREE.MeshStandardMaterial({
+  const starMat = getSharedStaticStandardMaterial({
     color: 0xfff6dc,
     emissive: 0xffe5a8,
     emissiveIntensity: 0.7,
@@ -1120,13 +1471,15 @@ function addArchPlantingZone(root: THREE.Group, x: number, z: number): void {
     { sx: 0.86, sy: 2.68, sz: 0.34, s: 0.18 },
   ] as const;
   for (const st of stars) {
-    const star = new THREE.Mesh(new THREE.OctahedronGeometry(st.s, 0), starMat);
+    const star = makeScaledOctahedron(st.s, 0, starMat);
     star.position.set(st.sx, st.sy, st.sz);
     rig.add(star);
   }
 
+  const archLeafInstances: StaticInstance[] = [];
+  const archRoseInstances: StaticInstance[] = [];
   for (let i = 0; i < 220; i++) {
-    const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.08 + Math.random() * 0.06, 8, 6), vineLeaf);
+    const leafRadius = 0.08 + Math.random() * 0.06;
     const t = i / 220;
     const a = Math.PI * t;
     const r = starRadiusAt(a - Math.PI / 2, 2.08, 0.96);
@@ -1134,11 +1487,26 @@ function addArchPlantingZone(root: THREE.Group, x: number, z: number): void {
     const ry = Math.sin(a) * r;
     const side = i % 2 === 0 ? -1 : 1;
     const legBlend = Math.random() < 0.35;
+    let px = 0;
+    let py = 0;
+    let pz = 0;
     if (legBlend) {
-      leaf.position.set(side * 2.1 + (Math.random() - 0.5) * 0.25, 0.4 + Math.random() * 2.5, (Math.random() - 0.5) * 0.2);
+      px = side * 2.1 + (Math.random() - 0.5) * 0.25;
+      py = 0.4 + Math.random() * 2.5;
+      pz = (Math.random() - 0.5) * 0.2;
     } else {
-      leaf.position.set(rx + (Math.random() - 0.5) * 0.24, 2.95 + ry + (Math.random() - 0.5) * 0.24, (Math.random() - 0.5) * 0.26);
+      px = rx + (Math.random() - 0.5) * 0.24;
+      py = 2.95 + ry + (Math.random() - 0.5) * 0.24;
+      pz = (Math.random() - 0.5) * 0.26;
+    }
+    archLeafInstances.push({ px, py, pz, sx: leafRadius, sy: leafRadius, sz: leafRadius });
+    if (i % 3 === 0) {
+      const roseRadius = 0.12 + Math.random() * 0.06;
+      archRoseInstances.push({ px, py, pz: pz + 0.12, sx: roseRadius, sy: roseRadius, sz: roseRadius });
+    }
   }
+  addInstancedSet(rig, getSharedSphereGeometry(8, 6), vineLeaf, archLeafInstances);
+  addInstancedSet(rig, getSharedSphereGeometry(10, 8), rosePetal, archRoseInstances);
 
   // Add floral decorations directly on the structure (posts + top frame), not on ground.
   const postDecorCenters = [
@@ -1168,14 +1536,6 @@ function addArchPlantingZone(root: THREE.Group, x: number, z: number): void {
     f.position.set(Math.cos(a) * r, 2.9 + Math.sin(a) * r + (Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.22);
     rig.add(f);
   }
-    rig.add(leaf);
-    if (i % 3 === 0) {
-      const rose = new THREE.Mesh(new THREE.SphereGeometry(0.12 + Math.random() * 0.06, 10, 8), rosePetal);
-      rose.position.copy(leaf.position);
-      rose.position.z += 0.12;
-      rig.add(rose);
-    }
-  }
 
   // Removed front translucent guide panels to avoid blocking white posts from frontal view.
 }
@@ -1184,31 +1544,35 @@ function addCenterFloralSwing(root: THREE.Group): void {
   const x = 0.2;
   const z = -0.1;
 
-  const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(2.1, 2.25, 0.12, 56),
-    new THREE.MeshStandardMaterial({ color: 0xe6f1cf, roughness: 0.92 }),
+  const base = makeScaledCylinder(
+    2.1,
+    2.25,
+    0.12,
+    56,
+    getSharedStaticStandardMaterial({ color: 0xe6f1cf, roughness: 0.92 }),
   );
   base.position.set(x, 0.23, z);
   base.receiveShadow = true;
   root.add(base);
 
-  const glow = new THREE.Mesh(
-    new THREE.CircleGeometry(1.65, 48),
-    new THREE.MeshBasicMaterial({ color: 0xf3f8bf, transparent: true, opacity: 0.3, depthWrite: false }),
+  const glow = makeScaledCircle(
+    1.65,
+    48,
+    getSharedStaticBasicMaterial({ color: 0xf3f8bf, transparent: true, opacity: 0.3, depthWrite: false }),
   );
   glow.rotation.x = -Math.PI / 2;
   glow.position.set(x, 0.301, z);
   root.add(glow);
 
-  const ringMat = new THREE.MeshStandardMaterial({ color: 0xf6f3ea, roughness: 0.78 });
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.45, 0.12, 16, 84), ringMat);
+  const ringMat = getSharedStaticStandardMaterial({ color: 0xf6f3ea, roughness: 0.78 });
+  const ring = makeScaledTorus(1.45, 0.12, 16, 84, Math.PI * 2, ringMat);
   ring.position.set(x, 2.35, z);
   ring.castShadow = true;
   root.add(ring);
 
-  const chainMat = new THREE.MeshStandardMaterial({ color: 0xbeb8a8, roughness: 0.5, metalness: 0.32 });
+  const chainMat = getSharedStaticStandardMaterial({ color: 0xbeb8a8, roughness: 0.5, metalness: 0.32 });
   for (const dx of [-0.52, 0.52]) {
-    const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1.2, 8), chainMat);
+    const chain = makeScaledCylinder(0.018, 0.018, 1.2, 8, chainMat);
     chain.position.set(x + dx, 1.9, z);
     root.add(chain);
   }
@@ -1218,65 +1582,74 @@ function addCenterFloralSwing(root: THREE.Group): void {
   root.add(seatGroup);
 
   const seatBase = new THREE.Mesh(
-    new THREE.BoxGeometry(1.18, 0.1, 0.46),
-    new THREE.MeshStandardMaterial({ color: 0xeeeadf, roughness: 0.9 }),
+    getSharedBoxGeometry(1.18, 0.1, 0.46),
+    getSharedStaticStandardMaterial({ color: 0xeeeadf, roughness: 0.9 }),
   );
   seatBase.castShadow = true;
   seatGroup.add(seatBase);
 
   const seatCushion = new THREE.Mesh(
-    new THREE.BoxGeometry(1.04, 0.08, 0.38),
-    new THREE.MeshStandardMaterial({ color: 0xf8f6ee, roughness: 0.85 }),
+    getSharedBoxGeometry(1.04, 0.08, 0.38),
+    getSharedStaticStandardMaterial({ color: 0xf8f6ee, roughness: 0.85 }),
   );
   seatCushion.position.y = 0.08;
   seatCushion.castShadow = true;
   seatGroup.add(seatCushion);
 
-  const armMat = new THREE.MeshStandardMaterial({ color: 0xf1eee4, roughness: 0.86 });
-  const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.18, 0.42), armMat);
-  const rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.18, 0.42), armMat);
+  const armMat = getSharedStaticStandardMaterial({ color: 0xf1eee4, roughness: 0.86 });
+  const leftArm = new THREE.Mesh(getSharedBoxGeometry(0.08, 0.18, 0.42), armMat);
+  const rightArm = new THREE.Mesh(getSharedBoxGeometry(0.08, 0.18, 0.42), armMat);
   leftArm.position.set(-0.56, 0.1, 0);
   rightArm.position.set(0.56, 0.1, 0);
   leftArm.castShadow = true;
   rightArm.castShadow = true;
   seatGroup.add(leftArm, rightArm);
 
-  const leafMat = new THREE.MeshStandardMaterial({ color: 0x7fb56c, roughness: 0.88 });
+  const leafMat = getSharedStaticStandardMaterial({ color: 0x7fb56c, roughness: 0.88 });
   const flowerMats = [
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.75 }),
-    new THREE.MeshStandardMaterial({ color: 0xffd8ea, roughness: 0.75 }),
-    new THREE.MeshStandardMaterial({ color: 0xfff2be, roughness: 0.75 }),
+    getSharedStaticStandardMaterial({ color: 0xffffff, roughness: 0.75 }),
+    getSharedStaticStandardMaterial({ color: 0xffd8ea, roughness: 0.75 }),
+    getSharedStaticStandardMaterial({ color: 0xfff2be, roughness: 0.75 }),
   ];
 
+  const swingLeafInstances: StaticInstance[] = [];
+  const swingFlowerInstances = flowerMats.map(() => [] as StaticInstance[]);
   for (let i = 0; i < 260; i++) {
     const t = i / 260;
     const a = t * Math.PI * 2;
     const r = 1.45;
     const layer = Math.random() < 0.75 ? 0 : (Math.random() < 0.5 ? -0.18 : 0.18);
-    const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.06 + Math.random() * 0.05, 8, 6), leafMat);
-    leaf.position.set(
-      x + Math.cos(a) * (r + (Math.random() - 0.5) * 0.18),
-      2.35 + Math.sin(a) * (r + (Math.random() - 0.5) * 0.18),
-      z + layer + (Math.random() - 0.5) * 0.16,
-    );
-    root.add(leaf);
+    const leafRadius = 0.06 + Math.random() * 0.05;
+    const px = x + Math.cos(a) * (r + (Math.random() - 0.5) * 0.18);
+    const py = 2.35 + Math.sin(a) * (r + (Math.random() - 0.5) * 0.18);
+    const pz = z + layer + (Math.random() - 0.5) * 0.16;
+    swingLeafInstances.push({ px, py, pz, sx: leafRadius, sy: leafRadius, sz: leafRadius });
 
     if (i % 2 === 0) {
-      const flower = new THREE.Mesh(new THREE.SphereGeometry(0.075 + Math.random() * 0.05, 10, 8), flowerMats[i % flowerMats.length]!);
-      flower.position.copy(leaf.position);
-      flower.position.z += 0.1;
-      root.add(flower);
+      const flowerRadius = 0.075 + Math.random() * 0.05;
+      swingFlowerInstances[i % flowerMats.length]!.push({ px, py, pz: pz + 0.1, sx: flowerRadius, sy: flowerRadius, sz: flowerRadius });
     }
   }
+  addInstancedSet(root, getSharedSphereGeometry(8, 6), leafMat, swingLeafInstances);
+  for (let i = 0; i < flowerMats.length; i++) {
+    addInstancedSet(root, getSharedSphereGeometry(10, 8), flowerMats[i]!, swingFlowerInstances[i]!);
+  }
 
+  const groundPetalInstances = flowerMats.map(() => [] as StaticInstance[]);
   for (let i = 0; i < 28; i++) {
-    const petal = new THREE.Mesh(
-      new THREE.SphereGeometry(0.04 + Math.random() * 0.03, 8, 6),
-      flowerMats[i % flowerMats.length]!,
-    );
     const a = (i / 28) * Math.PI * 2;
-    petal.position.set(x + Math.cos(a) * (0.4 + Math.random() * 1.1), 0.32, z + Math.sin(a) * (0.4 + Math.random() * 1.1));
-    root.add(petal);
+    const petalRadius = 0.04 + Math.random() * 0.03;
+    groundPetalInstances[i % flowerMats.length]!.push({
+      px: x + Math.cos(a) * (0.4 + Math.random() * 1.1),
+      py: 0.32,
+      pz: z + Math.sin(a) * (0.4 + Math.random() * 1.1),
+      sx: petalRadius,
+      sy: petalRadius,
+      sz: petalRadius,
+    });
+  }
+  for (let i = 0; i < flowerMats.length; i++) {
+    addInstancedSet(root, getSharedSphereGeometry(8, 6), flowerMats[i]!, groundPetalInstances[i]!);
   }
 }
 
@@ -1284,36 +1657,43 @@ function addMoonStarLightInstall(root: THREE.Group): void {
   const x = 0.2;
   const z = -0.1;
 
-  const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(2.3, 2.45, 0.12, 56),
-    new THREE.MeshStandardMaterial({ color: 0xf1e9d7, roughness: 0.9 }),
+  const base = makeScaledCylinder(
+    2.3,
+    2.45,
+    0.12,
+    56,
+    getSharedStaticStandardMaterial({ color: 0xf1e9d7, roughness: 0.9 }),
   );
   base.position.set(x, 0.23, z);
   base.receiveShadow = true;
   root.add(base);
 
-  const moonMat = new THREE.MeshStandardMaterial({
+  const moonMat = getSharedStaticStandardMaterial({
     color: 0xfff2c9,
     emissive: 0xffd88a,
     emissiveIntensity: 0.55,
     roughness: 0.38,
     metalness: 0.08,
   });
-  const moonOuter = new THREE.Mesh(new THREE.TorusGeometry(1.7, 0.14, 16, 96, Math.PI * 1.62), moonMat);
+  const moonOuter = makeScaledTorus(1.7, 0.14, 16, 96, Math.PI * 1.62, moonMat);
   moonOuter.position.set(x + 0.08, 2.25, z + 0.02);
   moonOuter.rotation.z = -0.45;
   moonOuter.castShadow = true;
   root.add(moonOuter);
 
-  const halo = new THREE.Mesh(
-    new THREE.TorusGeometry(1.95, 0.05, 12, 96, Math.PI * 1.7),
-    new THREE.MeshBasicMaterial({ color: 0xffefbe, transparent: true, opacity: 0.42, depthWrite: false }),
+  const halo = makeScaledTorus(
+    1.95,
+    0.05,
+    12,
+    96,
+    Math.PI * 1.7,
+    getSharedStaticBasicMaterial({ color: 0xffefbe, transparent: true, opacity: 0.42, depthWrite: false }),
   );
   halo.position.copy(moonOuter.position);
   halo.rotation.z = moonOuter.rotation.z;
   root.add(halo);
 
-  const starCoreMat = new THREE.MeshStandardMaterial({
+  const starCoreMat = getSharedStaticStandardMaterial({
     color: 0xfff6dc,
     emissive: 0xffe5a8,
     emissiveIntensity: 0.72,
@@ -1329,19 +1709,21 @@ function addMoonStarLightInstall(root: THREE.Group): void {
   ] as const;
 
   for (const st of stars) {
-    const core = new THREE.Mesh(new THREE.OctahedronGeometry(st.s, 0), starCoreMat);
+    const core = makeScaledOctahedron(st.s, 0, starCoreMat);
     core.position.set(x + st.sx, st.sy, z + st.sz);
     root.add(core);
 
-    const glow = new THREE.Mesh(
-      new THREE.SphereGeometry(st.s * 1.7, 10, 8),
-      new THREE.MeshBasicMaterial({ color: 0xfff1c2, transparent: true, opacity: 0.25, depthWrite: false }),
+    const glow = makeScaledSphere(
+      st.s * 1.7,
+      getSharedStaticBasicMaterial({ color: 0xfff1c2, transparent: true, opacity: 0.25, depthWrite: false }),
+      10,
+      8,
     );
     glow.position.copy(core.position);
     root.add(glow);
   }
 
-  const stringMat = new THREE.MeshStandardMaterial({ color: 0xe7d7ad, roughness: 0.6, metalness: 0.15 });
+  const stringMat = getSharedStaticStandardMaterial({ color: 0xe7d7ad, roughness: 0.6, metalness: 0.15 });
   for (let i = 0; i < 8; i++) {
     const t = i / 7;
     const theta = -0.95 + t * 1.95;
@@ -1350,35 +1732,41 @@ function addMoonStarLightInstall(root: THREE.Group): void {
     const pz = z + (Math.random() - 0.5) * 0.3;
     const len = 0.65 + Math.random() * 0.6;
 
-    const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, len, 6), stringMat);
+    const rope = makeScaledCylinder(0.01, 0.01, len, 6, stringMat);
     rope.position.set(px, py - len * 0.5, pz);
     root.add(rope);
 
-    const drop = new THREE.Mesh(new THREE.OctahedronGeometry(0.08 + Math.random() * 0.05, 0), starCoreMat);
+    const drop = makeScaledOctahedron(0.08 + Math.random() * 0.05, 0, starCoreMat);
     drop.position.set(px, py - len, pz);
     root.add(drop);
   }
 
+  const sparkleInstances: StaticInstance[] = [];
   for (let i = 0; i < 40; i++) {
-    const sparkle = new THREE.Mesh(
-      new THREE.SphereGeometry(0.03 + Math.random() * 0.03, 8, 6),
-      new THREE.MeshBasicMaterial({ color: 0xffefba, transparent: true, opacity: 0.4, depthWrite: false }),
-    );
-    sparkle.position.set(
-      x + (Math.random() - 0.5) * 3.8,
-      0.35 + Math.random() * 2.9,
-      z + (Math.random() - 0.5) * 3.2,
-    );
-    root.add(sparkle);
+    const radius = 0.03 + Math.random() * 0.03;
+    sparkleInstances.push({
+      px: x + (Math.random() - 0.5) * 3.8,
+      py: 0.35 + Math.random() * 2.9,
+      pz: z + (Math.random() - 0.5) * 3.2,
+      sx: radius,
+      sy: radius,
+      sz: radius,
+    });
   }
+  addInstancedSet(
+    root,
+    getSharedSphereGeometry(8, 6),
+    getSharedStaticBasicMaterial({ color: 0xffefba, transparent: true, opacity: 0.4, depthWrite: false }),
+    sparkleInstances,
+  );
 }
 
 function addScenery(root: THREE.Group): void {
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x7a5c3e, roughness: 0.84 });
+  const trunkMat = getSharedStaticStandardMaterial({ color: 0x7a5c3e, roughness: 0.84 });
   const cloudMats = [
-    new THREE.MeshStandardMaterial({ color: 0xf1c9de, roughness: 0.88 }),
-    new THREE.MeshStandardMaterial({ color: 0xbfe3d4, roughness: 0.88 }),
-    new THREE.MeshStandardMaterial({ color: 0xd8edb7, roughness: 0.88 }),
+    getSharedStaticStandardMaterial({ color: 0xf1c9de, roughness: 0.88 }),
+    getSharedStaticStandardMaterial({ color: 0xbfe3d4, roughness: 0.88 }),
+    getSharedStaticStandardMaterial({ color: 0xd8edb7, roughness: 0.88 }),
   ];
   const trees = [
     { x: -8.2, z: -4.9, style: 0, h: 1.65, w: 0.92 },
@@ -1387,32 +1775,31 @@ function addScenery(root: THREE.Group): void {
     { x: -8.5, z: 2.7, style: 1, h: 1.55, w: 0.86 },
     { x: 8.4, z: -0.3, style: 2, h: 1.75, w: 0.94 },
   ] as const;
+  const cloudInstances = cloudMats.map(() => [] as StaticInstance[]);
   for (const t of trees) {
-    const trunk = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.13 * t.w, 0.19 * t.w, t.h, 10),
-      trunkMat,
-    );
+    const trunk = makeScaledCylinder(0.13 * t.w, 0.19 * t.w, t.h, 10, trunkMat);
     trunk.position.set(t.x, 0.18 + t.h * 0.5, t.z);
     trunk.castShadow = true;
     root.add(trunk);
     const canopyCount = Math.floor(36 + t.h * 16);
     for (let i = 0; i < canopyCount; i++) {
-      const cloud = new THREE.Mesh(
-        new THREE.SphereGeometry((0.16 + Math.random() * 0.14) * t.w, 9, 7),
-        cloudMats[t.style]!,
-      );
       const trunkTopY = 0.18 + t.h;
       const lowBand = i < Math.floor(canopyCount * 0.25);
-      cloud.position.set(
-        t.x + (Math.random() - 0.5) * (2.2 * t.w),
-        lowBand
+      const radius = (0.16 + Math.random() * 0.14) * t.w;
+      cloudInstances[t.style]!.push({
+        px: t.x + (Math.random() - 0.5) * (2.2 * t.w),
+        py: lowBand
           ? trunkTopY - 0.2 + Math.random() * (0.45 * t.w)
           : trunkTopY + 0.15 + Math.random() * (0.95 * t.w),
-        t.z + (Math.random() - 0.5) * (2.3 * t.w),
-      );
-      cloud.castShadow = true;
-      root.add(cloud);
+        pz: t.z + (Math.random() - 0.5) * (2.3 * t.w),
+        sx: radius,
+        sy: radius,
+        sz: radius,
+      });
     }
+  }
+  for (let i = 0; i < cloudMats.length; i++) {
+    addInstancedSet(root, getSharedSphereGeometry(9, 7), cloudMats[i]!, cloudInstances[i]!, { castShadow: true });
   }
 }
 
@@ -1549,6 +1936,7 @@ function bootstrap(): void {
   const mount = document.getElementById('app');
   if (!mount) throw new Error('Missing #app');
   const performanceProfile = createPerformanceProfile();
+  const perfDebugEnabled = new URLSearchParams(window.location.search).has('debugPerf');
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x5dbfc4);
@@ -1558,12 +1946,24 @@ function bootstrap(): void {
   camera.position.set(14, 12, 14);
 
   const renderer = makeRenderer(performanceProfile);
-  renderer.shadowMap.autoUpdate = false;
-  renderer.shadowMap.needsUpdate = true;
+  renderer.shadowMap.enabled = false;
   mount.appendChild(renderer.domElement);
-  const requestShadowRefresh = (): void => {
-    renderer.shadowMap.needsUpdate = true;
-  };
+  const requestShadowRefresh = (): void => {};
+  const perfDebugEl = perfDebugEnabled ? document.createElement('div') : null;
+  if (perfDebugEl) {
+    perfDebugEl.style.position = 'fixed';
+    perfDebugEl.style.left = '12px';
+    perfDebugEl.style.top = '12px';
+    perfDebugEl.style.padding = '8px 10px';
+    perfDebugEl.style.borderRadius = '10px';
+    perfDebugEl.style.background = 'rgba(10, 18, 24, 0.82)';
+    perfDebugEl.style.color = '#ecf7ff';
+    perfDebugEl.style.font = '12px/1.45 Consolas, monospace';
+    perfDebugEl.style.whiteSpace = 'pre';
+    perfDebugEl.style.zIndex = '100';
+    perfDebugEl.style.pointerEvents = 'none';
+    document.body.appendChild(perfDebugEl);
+  }
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = performanceProfile.enableControlDamping;
@@ -1636,7 +2036,7 @@ function bootstrap(): void {
   drawHud.style.font = '12px/1.4 "Segoe UI","PingFang SC",sans-serif';
   drawHud.style.zIndex = '12';
   drawHud.style.display = 'none';
-  drawHud.textContent = 'G: 划区模式 | 左键: 加点 | Enter: 生成种植区 | Backspace: 撤销点 | Esc: 取消';
+  drawHud.textContent = 'G: 鍒掑尯妯″紡 | 宸﹂敭: 鍔犵偣 | Enter: 鐢熸垚绉嶆鍖?| Backspace: 鎾ら攢鐐?| Esc: 鍙栨秷';
   drawHud.textContent = 'WASD: move | Shift: run | G: draw mode | P: sow mode | Enter: commit area';
   document.body.appendChild(drawHud);
   drawHud.remove();
@@ -1654,7 +2054,7 @@ function bootstrap(): void {
   actionHud.style.zIndex = '13';
   actionHud.style.display = 'none';
   actionHud.style.pointerEvents = 'none';
-  actionHud.textContent = '点击地块: 种植 / 浇水 / 施肥';
+  actionHud.textContent = '鐐瑰嚮鍦板潡: 绉嶆 / 娴囨按 / 鏂借偉';
   document.body.appendChild(actionHud);
 
   const sowModeBtn = document.createElement('button');
@@ -1673,9 +2073,9 @@ function bootstrap(): void {
   sowModeBtn.style.transition = 'bottom 180ms ease, background 180ms ease, border-color 180ms ease';
   sowModeBtn.style.cursor = 'pointer';
   sowModeBtn.style.zIndex = '21';
-  sowModeBtn.textContent = '播种模式: 关';
+  sowModeBtn.textContent = 'Sow mode: off';
   document.body.appendChild(sowModeBtn);
-  sowModeBtn.textContent = '🌱 进入播种模式';
+  sowModeBtn.textContent = '馃尡 杩涘叆鎾妯″紡';
 
   const helpBtn = document.createElement('button');
   helpBtn.type = 'button';
@@ -1720,15 +2120,15 @@ function bootstrap(): void {
   helpPanel.style.boxShadow = '0 16px 42px rgba(0,0,0,0.38)';
   helpPanel.innerHTML = [
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">',
-    '<div style="font:700 17px/1.2 &quot;Segoe UI&quot;,&quot;PingFang SC&quot;,sans-serif;">操作说明</div>',
-    '<button id="help-close" type="button" style="padding:5px 9px;border-radius:8px;border:1px solid rgba(190,220,204,0.35);background:rgba(42,58,52,0.9);color:#f0fff7;cursor:pointer;">关闭</button>',
+    '<div style="font:700 17px/1.2 &quot;Segoe UI&quot;,&quot;PingFang SC&quot;,sans-serif;">鎿嶄綔璇存槑</div>',
+    '<button id="help-close" type="button" style="padding:5px 9px;border-radius:8px;border:1px solid rgba(190,220,204,0.35);background:rgba(42,58,52,0.9);color:#f0fff7;cursor:pointer;">鍏抽棴</button>',
     '</div>',
     '<div style="font:12px/1.7 &quot;Segoe UI&quot;,&quot;PingFang SC&quot;,sans-serif;opacity:0.96;">',
-    'WASD / 方向键: 移动，Shift: 跑步，B: 打开商店，P: 切换播种模式<br/>',
-    '鼠标左键拖动旋转，滚轮缩放，右键平移<br/>',
-    '播种模式开启: 显示底部种子列表，可在地块播种<br/>',
-    '播种模式关闭: 隐藏种子列表，可继续浇水 / 施肥 / 收花<br/>',
-    'G: 进入划区模式，左键加点，Enter/空格确认，Backspace撤销，Esc取消',
+    'WASD / 鏂瑰悜閿? 绉诲姩锛孲hift: 璺戞锛孊: 鎵撳紑鍟嗗簵锛孭: 鍒囨崲鎾妯″紡<br/>',
+    '榧犳爣宸﹂敭鎷栧姩鏃嬭浆锛屾粴杞缉鏀撅紝鍙抽敭骞崇Щ<br/>',
+    '鎾妯″紡寮€鍚? 鏄剧ず搴曢儴绉嶅瓙鍒楄〃锛屽彲鍦ㄥ湴鍧楁挱绉?br/>',
+    '鎾妯″紡鍏抽棴: 闅愯棌绉嶅瓙鍒楄〃锛屽彲缁х画娴囨按 / 鏂借偉 / 鏀惰姳<br/>',
+    'G: 杩涘叆鍒掑尯妯″紡锛屽乏閿姞鐐癸紝Enter/绌烘牸纭锛孊ackspace鎾ら攢锛孍sc鍙栨秷',
     '</div>',
   ].join('');
   document.body.appendChild(helpPanel);
@@ -1851,12 +2251,12 @@ function bootstrap(): void {
   shopPanel.appendChild(shopHeader);
 
   const shopTitle = document.createElement('div');
-  shopTitle.textContent = '种子商店';
+  shopTitle.textContent = '绉嶅瓙鍟嗗簵';
   shopTitle.style.font = '700 18px/1.2 "Segoe UI","PingFang SC",sans-serif';
   shopHeader.appendChild(shopTitle);
 
   const shopClose = document.createElement('button');
-  shopClose.textContent = '关闭';
+  shopClose.textContent = '鍏抽棴';
   shopClose.style.padding = '6px 10px';
   shopClose.style.border = '1px solid rgba(190,220,204,0.35)';
   shopClose.style.background = 'rgba(42,58,52,0.9)';
@@ -1908,6 +2308,7 @@ function bootstrap(): void {
   const moveDir = new THREE.Vector3();
   const cameraForward = new THREE.Vector3();
   const cameraRight = new THREE.Vector3();
+  const tmpYawQuat = new THREE.Quaternion();
   const worldUp = new THREE.Vector3(0, 1, 0);
   const cameraTargetFollow = new THREE.Vector3();
   const locomotionPhase = { value: 0 };
@@ -1931,13 +2332,11 @@ function bootstrap(): void {
   };
   const syncPlotCellVisibility = (target?: THREE.Mesh): void => {
     if (target) {
-      const hasLife = target.userData.life != null;
-      target.visible = sowMode || hasLife;
+      target.visible = true;
       return;
     }
     for (const cell of plotCells) {
-      const hasLife = cell.userData.life != null;
-      cell.visible = sowMode || hasLife;
+      cell.visible = true;
     }
   };
   const collectPlotCells = (): void => {
@@ -1956,9 +2355,6 @@ function bootstrap(): void {
   collectPlotCells();
   const setSowMode = (enabled: boolean): void => {
     sowMode = enabled;
-    sowModeBtn.textContent = enabled ? '播种模式: 开' : '播种模式: 关';
-    sowModeBtn.style.background = enabled ? 'rgba(48,86,72,0.92)' : 'rgba(16,33,29,0.82)';
-    sowModeBtn.style.borderColor = enabled ? 'rgba(206,242,220,0.48)' : 'rgba(173,222,198,0.34)';
     for (const cell of plotCells) {
       const mats = Array.isArray(cell.material) ? cell.material : [cell.material];
       for (const m of mats) {
@@ -1971,40 +2367,49 @@ function bootstrap(): void {
       }
     }
     syncPlotCellVisibility();
-    sowModeBtn.textContent = enabled ? '播种模式: 开' : '播种模式: 关';
-    actionHud.textContent = enabled ? '播种模式: 点击方块进行种植' : '播种模式关闭: 仍可浇水/施肥/收获';
-    actionHud.textContent = enabled ? '播种模式: 点击方块进行种植/养护操作' : '播种模式已关闭';
     seedDock.style.display = enabled ? 'flex' : 'none';
     sowModeBtn.style.bottom = enabled ? '96px' : '14px';
     sowModeBtn.style.background = enabled
       ? 'linear-gradient(180deg, rgba(70,115,84,0.96), rgba(43,84,62,0.98))'
       : 'linear-gradient(180deg, rgba(41,64,83,0.94), rgba(28,44,58,0.96))';
     sowModeBtn.style.borderColor = enabled ? 'rgba(206,242,220,0.56)' : 'rgba(178,228,206,0.42)';
-    sowModeBtn.textContent = enabled ? '🌱 退出播种模式' : '🌱 进入播种模式';
-    actionHud.textContent = enabled ? '播种模式: 点击地块播种' : '普通模式: 可浇水/施肥/收花';
+    sowModeBtn.textContent = enabled ? 'Exit sow mode' : 'Enter sow mode';
+    actionHud.textContent = enabled ? 'Sow mode: click a plot to plant or care' : 'Normal mode: water/fertilize/harvest';
   };
   setSowMode(false);
   const seedButtons = new Map<SeedId, HTMLButtonElement>();
   const seedBadges = new Map<SeedId, HTMLSpanElement>();
   const shopOwnedLabels = new Map<SeedId, HTMLSpanElement>();
 
-  const showToast = (text: string): void => {
-    const tip = document.createElement('div');
-    tip.textContent = text;
-    tip.style.position = 'fixed';
-    tip.style.left = '50%';
-    tip.style.top = '18%';
-    tip.style.transform = 'translateX(-50%)';
-    tip.style.padding = '10px 14px';
-    tip.style.borderRadius = '12px';
-    tip.style.border = '1px solid rgba(188,220,204,0.35)';
-    tip.style.background = 'rgba(12,24,22,0.92)';
-    tip.style.color = '#eef6f1';
-    tip.style.font = '13px/1.3 "Segoe UI","PingFang SC",sans-serif';
-    tip.style.zIndex = '60';
-    tip.style.pointerEvents = 'none';
-    document.body.appendChild(tip);
-    window.setTimeout(() => tip.remove(), 1300);
+  const toastEl = document.createElement('div');
+  toastEl.style.position = 'fixed';
+  toastEl.style.left = '50%';
+  toastEl.style.top = '18%';
+  toastEl.style.transform = 'translateX(-50%)';
+  toastEl.style.padding = '10px 14px';
+  toastEl.style.borderRadius = '12px';
+  toastEl.style.border = '1px solid rgba(188,220,204,0.35)';
+  toastEl.style.background = 'rgba(12,24,22,0.92)';
+  toastEl.style.color = '#eef6f1';
+  toastEl.style.font = '13px/1.3 "Segoe UI","PingFang SC",sans-serif';
+  toastEl.style.zIndex = '60';
+  toastEl.style.pointerEvents = 'none';
+  toastEl.style.opacity = '0';
+  toastEl.style.transition = 'opacity 140ms ease';
+  document.body.appendChild(toastEl);
+  let toastTimer: number | null = null;
+  let lastBackgroundToastAt = 0;
+  const showToast = (text: string, kind: 'user' | 'background' = 'user'): void => {
+    const now = performance.now();
+    if (kind === 'background' && now - lastBackgroundToastAt < 1600) return;
+    if (kind === 'background') lastBackgroundToastAt = now;
+    toastEl.textContent = text;
+    toastEl.style.opacity = '1';
+    if (toastTimer !== null) window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => {
+      toastEl.style.opacity = '0';
+      toastTimer = null;
+    }, kind === 'background' ? 900 : 1300);
   };
 
   const updateQuickHud = (): void => {
@@ -2016,6 +2421,7 @@ function bootstrap(): void {
   };
 
   const plotEffects: PlotFx[] = [];
+  const pendingPlotVisualRefresh = new Set<THREE.Mesh>();
   const STAGE1_GROW_RATE = 0.13;
   const STAGE2_GROW_RATE = 0.14;
   const STAGE3_GROW_RATE = 0.12;
@@ -2033,7 +2439,10 @@ function bootstrap(): void {
 
   const clearPlantVisual = (cell: THREE.Mesh): void => {
     const existing = cell.userData.flower as THREE.Object3D | undefined;
-    if (existing) cell.remove(existing);
+    if (existing) {
+      cell.remove(existing);
+      disposePlantVisual(existing);
+    }
     cell.userData.flower = null;
   };
 
@@ -2337,7 +2746,6 @@ function bootstrap(): void {
     const visual = buildPlantVisual(life);
     visual.position.set(0, -0.01, 0);
     cell.add(visual);
-    applyToyStyle(visual, performanceProfile);
     disableRealtimeShadows(visual);
     freezeStaticTransforms(visual);
     cell.userData.flower = visual;
@@ -2381,6 +2789,21 @@ function bootstrap(): void {
       cell.add(hint);
       cell.userData.promptFx = hint;
       promptFxCells.add(cell);
+    }
+  };
+
+  const enqueuePlotVisualRefresh = (cell: THREE.Mesh): void => {
+    pendingPlotVisualRefresh.add(cell);
+  };
+
+  const flushPlotVisualRefresh = (maxPerFrame = 1): void => {
+    if (pendingPlotVisualRefresh.size === 0) return;
+    let count = 0;
+    for (const cell of pendingPlotVisualRefresh) {
+      pendingPlotVisualRefresh.delete(cell);
+      refreshPlotVisual(cell);
+      count += 1;
+      if (count >= maxPerFrame) break;
     }
   };
 
@@ -2495,50 +2918,40 @@ function bootstrap(): void {
       if (rackId) {
         const locked = getRackLockedSeed(rackId);
         if (locked && locked !== seedState.selectedSeed) {
-          return `花架已锁定：${SEED_CONFIG[locked].label}，请切换相同种子`;
+          return `Rack locked to ${SEED_CONFIG[locked].label}. Switch to matching seed.`;
         }
       }
     }
-    if (!life) return `可种植: ${SEED_CONFIG[seedState.selectedSeed].label}`;
+    if (!life) return `Plantable: ${SEED_CONFIG[seedState.selectedSeed].label}`;
     const stage = life.stage as PlotStage;
     if (stage === 1) {
-      if (life.needsWater) return '第一阶段: 可浇水，浇水后进入第二阶段';
-      return `第一阶段生长中: ${Math.round(life.growProgress * 100)}%`;
+      if (life.needsWater) return 'Stage 1 complete: water to enter Stage 2';
+      return `Stage 1 growing: ${Math.round(life.growProgress * 100)}%`;
     }
     if (stage === 2) {
-      if (life.needsWater) return '第二阶段: 可浇水，浇水后进入第三阶段';
-      return `第二阶段生长中: ${Math.round(life.growProgress * 100)}%`;
+      if (life.needsWater) return 'Stage 2 complete: water to enter Stage 3';
+      return `Stage 2 growing: ${Math.round(life.growProgress * 100)}%`;
     }
     if (stage === 3) {
-      if (life.needsFertilizer) return '第三阶段: 可施肥，施肥后进入第四阶段';
-      return `第三阶段生长中: ${Math.round(life.growProgress * 100)}%`;
+      if (life.needsFertilizer) return 'Stage 3 complete: fertilize to enter Stage 4';
+      return `Stage 3 growing: ${Math.round(life.growProgress * 100)}%`;
     }
     if (stage === 4) {
-      if (!life.matureClusterReady) return `成熟中: ${Math.round(life.matureProgress * 100)}%`;
-      return life.giantBloom ? '超大花成熟，可收获' : '花朵成熟，可收获';
+      if (!life.matureClusterReady) return `Maturing: ${Math.round(life.matureProgress * 100)}%`;
+      return life.giantBloom ? 'Giant bloom ready: harvest now' : 'Bloom ready: harvest now';
     }
-    if (!life) return `可种植: ${SEED_CONFIG[seedState.selectedSeed].label}`;
-    if (life.stage === 2 && life.needsWater) return '可浇水: 点击浇水进入第三阶段';
-    if (life.stage === 3 && life.needsFertilizer) {
-      if (life.fertilizerCooldown > 0) return `施肥冷却中: ${life.fertilizerCooldown.toFixed(1)}s`;
-      return '可施肥: 点击后立即成熟';
-    }
-    if (life.stage === 4) {
-      if (!life.matureClusterReady) return `成熟中: ${Math.round(life.matureProgress * 100)}%`;
-      return life.giantBloom ? '超大花成熟，可收获' : '花朵成熟，可收获';
-    }
-    return `生长中: ${Math.round(life.growProgress * 100)}%`;
+    return `Growing: ${Math.round(life.growProgress * 100)}%`;
   };
 
   const interactPlotCell = (cell: THREE.Mesh): void => {
     const life = getLife(cell);
-    const finalize = () => {
+    const finalize = (): void => {
       syncPlotCellVisibility(cell);
       refreshSeedDock();
       updateQuickHud();
       for (const seedId of SEED_IDS) {
         const ownedLabel = shopOwnedLabels.get(seedId);
-        if (ownedLabel) ownedLabel.textContent = `库存 ${seedState.seeds[seedId]}`;
+        if (ownedLabel) ownedLabel.textContent = `Stock ${seedState.seeds[seedId]}`;
       }
       actionHud.textContent = describeCellAction(cell);
     };
@@ -2549,14 +2962,14 @@ function bootstrap(): void {
       if (rackId) {
         const locked = getRackLockedSeed(rackId);
         if (locked && locked !== seed) {
-          showToast(`该花架已锁定为 ${SEED_CONFIG[locked].label}`);
+          showToast(`This rack is locked to ${SEED_CONFIG[locked].label}`);
           actionHud.textContent = describeCellAction(cell);
           return;
         }
       }
       if (seedState.seeds[seed] <= 0) {
-        showToast('种子不足，先去商店购买');
-        actionHud.textContent = '点击地块: 种植 / 浇水 / 施肥';
+        showToast('Not enough seeds. Buy more in the shop.');
+        actionHud.textContent = 'Click plot: plant / water / fertilize';
         return;
       }
       seedState.seeds[seed] -= 1;
@@ -2573,8 +2986,8 @@ function bootstrap(): void {
       } satisfies PlotLifeState;
       cell.userData.planted = true;
       cell.userData.seedId = seed;
-      refreshPlotVisual(cell);
-      showToast(`${SEED_CONFIG[seed].label} 已种下，第一阶段开始生长`);
+      enqueuePlotVisualRefresh(cell);
+      showToast(`${SEED_CONFIG[seed].label} planted. Stage 1 started.`);
       finalize();
       return;
     }
@@ -2582,7 +2995,7 @@ function bootstrap(): void {
     const stage = life.stage as PlotStage;
     if (stage === 1) {
       if (!life.needsWater) {
-        showToast('第一阶段生长中');
+        showToast('Stage 1 is still growing.');
         finalize();
         return;
       }
@@ -2591,16 +3004,16 @@ function bootstrap(): void {
       life.needsWater = false;
       life.needsFertilizer = false;
       life.fertilizerCooldown = 0;
-      refreshPlotVisual(cell);
+      enqueuePlotVisualRefresh(cell);
       spawnPlotFx(cell, 'water');
-      showToast('浇水完成，进入第二阶段生长');
+      showToast('Watered. Entered Stage 2.');
       finalize();
       return;
     }
 
     if (stage === 2) {
       if (!life.needsWater) {
-        showToast(`第二阶段生长中 ${Math.round(life.growProgress * 100)}%`);
+        showToast(`Stage 2 growth: ${Math.round(life.growProgress * 100)}%`);
         finalize();
         return;
       }
@@ -2609,16 +3022,16 @@ function bootstrap(): void {
       life.needsWater = false;
       life.needsFertilizer = false;
       life.fertilizerCooldown = 0;
-      refreshPlotVisual(cell);
+      enqueuePlotVisualRefresh(cell);
       spawnPlotFx(cell, 'water');
-      showToast('浇水完成，进入第三阶段生长');
+      showToast('Watered. Entered Stage 3.');
       finalize();
       return;
     }
 
     if (stage === 3) {
       if (!life.needsFertilizer) {
-        showToast(`第三阶段生长中 ${Math.round(life.growProgress * 100)}%`);
+        showToast(`Stage 3 growth: ${Math.round(life.growProgress * 100)}%`);
         finalize();
         return;
       }
@@ -2628,16 +3041,16 @@ function bootstrap(): void {
       life.giantBloom = Math.random() < GIANT_CHANCE;
       life.matureProgress = 0;
       life.matureClusterReady = false;
-      refreshPlotVisual(cell);
+      enqueuePlotVisualRefresh(cell);
       spawnPlotFx(cell, 'fertilize');
-      showToast(life.giantBloom ? '施肥成功，触发超大花，进入第四阶段' : '施肥成功，进入第四阶段');
+      showToast(life.giantBloom ? 'Fertilized. Giant bloom triggered.' : 'Fertilized. Entered Stage 4.');
       finalize();
       return;
     }
 
     if (stage === 4) {
       if (!life.matureClusterReady) {
-        showToast(`还在成熟中 ${Math.round(life.matureProgress * 100)}%`);
+        showToast(`Maturing: ${Math.round(life.matureProgress * 100)}%`);
         finalize();
         return;
       }
@@ -2657,87 +3070,9 @@ function bootstrap(): void {
         }
       }
       spawnPlotFx(cell, 'mature');
-      showToast(`收花成功 +${gain} 金币`);
+      showToast(`Harvested +${gain} coins`);
       finalize();
-      return;
     }
-    if (!life) {
-      const seed = seedState.selectedSeed;
-      if (seedState.seeds[seed] <= 0) {
-        showToast('种子不足，先去商店购买');
-        actionHud.textContent = '点击地块: 种植 / 浇水 / 施肥';
-        return;
-      }
-      seedState.seeds[seed] -= 1;
-      const next: PlotLifeState = {
-        seedId: seed,
-        stage: 1,
-        growProgress: 0,
-        needsWater: false,
-        needsFertilizer: false,
-        fertilizerCooldown: 0,
-        giantBloom: false,
-        matureProgress: 0,
-        matureClusterReady: false,
-      };
-      cell.userData.life = next;
-      cell.userData.planted = true;
-      cell.userData.seedId = seed;
-      refreshPlotVisual(cell);
-      showToast(`${SEED_CONFIG[seed].label} 已种下`);
-    } else if (life.stage === 2 && life.needsWater) {
-      life.stage = 3;
-      life.growProgress = 0;
-      life.needsWater = false;
-      life.needsFertilizer = true;
-      life.fertilizerCooldown = FERTILIZE_WAIT;
-      refreshPlotVisual(cell);
-      spawnPlotFx(cell, 'water');
-      showToast('浇水完成，进入第三阶段');
-    } else if (life.stage === 3 && life.needsFertilizer) {
-      if (life.fertilizerCooldown > 0) {
-        showToast(`还需等待 ${life.fertilizerCooldown.toFixed(1)}s`);
-        return;
-      }
-      life.stage = 4;
-      life.needsFertilizer = false;
-      life.fertilizerCooldown = 0;
-      life.giantBloom = Math.random() < GIANT_CHANCE;
-      life.matureProgress = 0;
-      life.matureClusterReady = false;
-      refreshPlotVisual(cell);
-      spawnPlotFx(cell, 'fertilize');
-      showToast(life.giantBloom ? '施肥成功，触发超大花朵，进入成熟期' : '施肥成功，进入成熟期');
-    } else if (life.stage === 4) {
-      if (!life.matureClusterReady) {
-        showToast(`还在成熟中 ${Math.round(life.matureProgress * 100)}%`);
-        return;
-      }
-      const gain = SEED_CONFIG[life.seedId].sellBase + (life.giantBloom ? 10 : 0);
-      seedState.gold += gain;
-      clearPlantVisual(cell);
-      clearPromptFx(cell);
-      cell.userData.life = null;
-      cell.userData.planted = false;
-      cell.userData.seedId = null;
-      syncActivePlotCell(cell);
-      const mats = Array.isArray(cell.material) ? cell.material : [cell.material];
-      for (const m of mats) {
-        if ('color' in m) {
-          const c = (m as THREE.MeshToonMaterial).color;
-          c.setHex(0xc9d3df);
-        }
-      }
-      spawnPlotFx(cell, 'mature');
-      showToast(`收花成功 +${gain} 金币`);
-    }
-    refreshSeedDock();
-    updateQuickHud();
-    for (const seedId of SEED_IDS) {
-      const ownedLabel = shopOwnedLabels.get(seedId);
-      if (ownedLabel) ownedLabel.textContent = `库存 ${seedState.seeds[seedId]}`;
-    }
-    actionHud.textContent = describeCellAction(cell);
   };
 
   const tickPlotLifecycle = (delta: number): void => {
@@ -2751,8 +3086,8 @@ function bootstrap(): void {
           if (life.growProgress >= 1) {
             life.growProgress = 1;
             life.needsWater = true;
-            refreshPlotVisual(cell);
-            showToast('第一阶段生长完成，需要浇水进入第二阶段');
+            enqueuePlotVisualRefresh(cell);
+            showToast('Stage 1 complete. Water to enter Stage 2.', 'background');
           }
         }
         continue;
@@ -2762,8 +3097,8 @@ function bootstrap(): void {
         if (life.growProgress >= 1) {
           life.growProgress = 1;
           life.needsWater = true;
-          refreshPlotVisual(cell);
-          showToast('第二阶段生长完成，需要浇水进入第三阶段');
+          enqueuePlotVisualRefresh(cell);
+          showToast('Stage 2 complete. Water to enter Stage 3.', 'background');
         }
         continue;
       }
@@ -2772,21 +3107,18 @@ function bootstrap(): void {
         if (life.growProgress >= 1) {
           life.growProgress = 1;
           life.needsFertilizer = true;
-          refreshPlotVisual(cell);
-          showToast('第三阶段生长完成，需要施肥进入第四阶段');
+          enqueuePlotVisualRefresh(cell);
+          showToast('Stage 3 complete. Fertilize to enter Stage 4.', 'background');
         }
         continue;
       }
       if (stage === 4 && !life.matureClusterReady) {
-        const prevBucket = Math.floor(life.matureProgress * 4);
         life.matureProgress = Math.min(1, life.matureProgress + delta * 0.24);
-        const nextBucket = Math.floor(life.matureProgress * 4);
-        if (nextBucket !== prevBucket) refreshPlotVisual(cell);
         if (life.matureProgress >= 1) {
           life.matureClusterReady = true;
-          refreshPlotVisual(cell);
+          enqueuePlotVisualRefresh(cell);
           spawnPlotFx(cell, 'mature');
-          showToast('花朵完全成熟，长出多枝多花');
+          showToast('Bloom is fully mature and ready to harvest.', 'background');
         }
         continue;
       }
@@ -2796,22 +3128,11 @@ function bootstrap(): void {
           life.stage = 2;
           life.growProgress = 0;
           life.needsWater = true;
-          refreshPlotVisual(cell);
-          showToast('花苗进入第二阶段，需要浇水');
+          enqueuePlotVisualRefresh(cell);
+          showToast('Sprout entered Stage 2. Water is needed.', 'background');
         }
       } else if (life.stage === 3 && life.needsFertilizer && life.fertilizerCooldown > 0) {
         life.fertilizerCooldown = Math.max(0, life.fertilizerCooldown - delta);
-      } else if (life.stage === 4 && !life.matureClusterReady) {
-        const prevBucket = Math.floor(life.matureProgress * 4);
-        life.matureProgress = Math.min(1, life.matureProgress + delta * 0.24);
-        const nextBucket = Math.floor(life.matureProgress * 4);
-        if (nextBucket !== prevBucket) refreshPlotVisual(cell);
-        if (life.matureProgress >= 1) {
-          life.matureClusterReady = true;
-          refreshPlotVisual(cell);
-          spawnPlotFx(cell, 'mature');
-          showToast('花朵完全成熟，长出多枝多花');
-        }
       }
     }
   };
@@ -2902,19 +3223,19 @@ function bootstrap(): void {
     title.textContent = SEED_CONFIG[id].label;
     title.style.fontWeight = '700';
     const price = document.createElement('div');
-    price.textContent = `售价: ${SEED_CONFIG[id].seedPrice} 金币`;
+    price.textContent = `鍞环: ${SEED_CONFIG[id].seedPrice} 閲戝竵`;
     price.style.opacity = '0.86';
     info.append(title, price);
     row.appendChild(info);
 
     const owned = document.createElement('span');
-    owned.textContent = `库存 0`;
+    owned.textContent = `搴撳瓨 0`;
     owned.style.fontSize = '12px';
     row.appendChild(owned);
     shopOwnedLabels.set(id, owned);
 
     const buyBtn = document.createElement('button');
-    buyBtn.textContent = '购买';
+    buyBtn.textContent = '璐拱';
     buyBtn.style.padding = '6px 10px';
     buyBtn.style.borderRadius = '8px';
     buyBtn.style.border = '1px solid rgba(180,220,196,0.35)';
@@ -2924,7 +3245,7 @@ function bootstrap(): void {
     buyBtn.addEventListener('click', () => {
       const priceValue = SEED_CONFIG[id].seedPrice;
       if (seedState.gold < priceValue) {
-        showToast('金币不足');
+        showToast('閲戝竵涓嶈冻');
         return;
       }
       seedState.gold -= priceValue;
@@ -2933,7 +3254,7 @@ function bootstrap(): void {
       updateQuickHud();
       for (const seedId of SEED_IDS) {
         const ownedLabel = shopOwnedLabels.get(seedId);
-        if (ownedLabel) ownedLabel.textContent = `库存 ${seedState.seeds[seedId]}`;
+        if (ownedLabel) ownedLabel.textContent = `搴撳瓨 ${seedState.seeds[seedId]}`;
       }
     });
     row.appendChild(buyBtn);
@@ -3041,6 +3362,8 @@ function bootstrap(): void {
   });
 
   renderer.domElement.addEventListener('pointermove', (ev) => {
+    // Skip hover refresh while orbiting camera with right/middle mouse button.
+    if ((ev.buttons & 2) !== 0 || (ev.buttons & 4) !== 0) return;
     const rect = renderer.domElement.getBoundingClientRect();
     hoverNdc.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
     hoverNdc.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
@@ -3096,25 +3419,26 @@ function bootstrap(): void {
     if (!hasHoverPointer || drawState.enabled || shopPanel.style.display === 'block') {
       return;
     }
+    if (!hoverHintDirty) return;
     const now = performance.now();
-    if (!hoverHintDirty && now - lastHoverHintAt < performanceProfile.hoverRefreshMs) {
+    if (now - lastHoverHintAt < performanceProfile.hoverRefreshMs) {
       return;
     }
     hoverHintDirty = false;
     lastHoverHintAt = now;
     if (!sowMode && shopPanel.style.display === 'block') {
-      actionHud.textContent = '播种模式关闭：点击底部按钮进入播种模式';
+      actionHud.textContent = 'Sow mode is off: click the bottom button to enter sow mode';
       return;
     }
     raycaster.setFromCamera(hoverNdc, camera);
     const hits = raycaster.intersectObjects(plotCells, false);
     if (hits.length === 0) {
-      actionHud.textContent = '点击地块: 种植 / 浇水 / 施肥';
+      actionHud.textContent = '鐐瑰嚮鍦板潡: 绉嶆 / 娴囨按 / 鏂借偉';
       return;
     }
     const cell = hits[0]!.object as THREE.Mesh;
     if (!sowMode && !getLife(cell)) {
-      actionHud.textContent = '播种模式关闭: 可照料已种花朵';
+      actionHud.textContent = 'Sow mode is off: only planted plots can be interacted with';
       return;
     }
     actionHud.textContent = describeCellAction(cell);
@@ -3173,8 +3497,8 @@ function bootstrap(): void {
 
       // The chibi face is modeled toward -Z, so yaw needs a PI-equivalent directional flip.
       const targetYaw = Math.atan2(-worldX, -worldZ);
-      const q = new THREE.Quaternion().setFromAxisAngle(worldUp, targetYaw);
-      previewPlayer.quaternion.slerp(q, 1 - Math.exp(-12 * delta));
+      tmpYawQuat.setFromAxisAngle(worldUp, targetYaw);
+      previewPlayer.quaternion.slerp(tmpYawQuat, 1 - Math.exp(-12 * delta));
     } else {
       previewSpeed += (walkSpeed - previewSpeed) * Math.min(1, delta * 8);
     }
@@ -3192,21 +3516,35 @@ function bootstrap(): void {
     resizeRenderer(renderer, performanceProfile, window.innerWidth, window.innerHeight);
   });
 
-  const frameInterval = 1 / performanceProfile.targetFps;
-  let frameBudget = 0;
+  let perfDebugAccum = 0;
   renderer.setAnimationLoop(() => {
-    frameBudget += Math.min(clock.getDelta(), 0.05);
-    if (frameBudget < frameInterval) return;
-    const delta = Math.min(frameBudget, 0.05);
-    frameBudget = 0;
+    const delta = Math.min(clock.getDelta(), 1 / 30);
     tickPlotLifecycle(delta);
+    flushPlotVisualRefresh();
     updatePlotEffects(delta);
     updatePromptFx(delta);
     updateHoverHint();
     updatePreviewPlayer(delta);
     if (controls.enableDamping) controls.update();
+
+    perfDebugAccum += delta;
+    if (perfDebugEl && perfDebugAccum >= 0.75) {
+      perfDebugAccum = 0;
+      const perfMemory = (performance as Performance & { memory?: { usedJSHeapSize?: number } }).memory;
+      const usedHeapMb = perfMemory?.usedJSHeapSize ? `${(perfMemory.usedJSHeapSize / (1024 * 1024)).toFixed(1)} MB` : 'n/a';
+      perfDebugEl.textContent = [
+        `calls ${renderer.info.render.calls}`,
+        `tris ${renderer.info.render.triangles}`,
+        `geom ${renderer.info.memory.geometries}`,
+        `tex ${renderer.info.memory.textures}`,
+        `plots ${plotCells.length}/${activePlotCells.size}`,
+        `heap ${usedHeapMb}`,
+      ].join('\n');
+    }
+
     renderer.render(scene, camera);
   });
 }
 
 bootstrap();
+

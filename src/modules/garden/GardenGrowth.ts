@@ -36,8 +36,6 @@ export function tickGardenGrowth(delta: number, plots: PlotRuntime[]): void {
       p.fertilizerCooldown = 0;
       p.waterSaturation = 0;
       changed = true;
-    } else {
-      changed = true;
     }
   }
 

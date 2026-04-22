@@ -26,6 +26,11 @@ interface FriendActionHit {
   plotIndex: number;
 }
 
+type FriendActionWidgets = {
+  bless: THREE.Sprite;
+  steal: THREE.Sprite;
+};
+
 function resolvePlotFromHits(hits: THREE.Intersection[]): { plotIndex: number; isFriendPlot: boolean } | null {
   for (const h of hits) {
     const fi = getFriendGardenPlotIndex(h.object);
@@ -90,7 +95,12 @@ export class GardenModuleV2 implements IModule {
   private readonly chaser = new FriendGardenChaser();
   private plotFx: GardenPlotEffects | null = null;
   private plotFxFriend: GardenPlotEffects | null = null;
+  private friendActionWidgets: FriendActionWidgets[] = [];
   private chaseToastCooldown = 0;
+  private elapsedSec = 0;
+  private chaserUpdateAccum = 0;
+  private friendVisualSyncAccum = 0;
+  private friendButtonsSyncAccum = 0;
 
   init(scene: THREE.Scene): void {
     this.scene = scene;
@@ -107,6 +117,7 @@ export class GardenModuleV2 implements IModule {
 
   update(delta: number): void {
     this.chaseToastCooldown = Math.max(0, this.chaseToastCooldown - delta);
+    this.elapsedSec += delta;
     if (!this.player && this.selfHandles.length > 0) {
       const anyRoot = this.selfHandles[0]!.root.parent;
       this.player = anyRoot?.getObjectByName('Player') ?? null;
@@ -115,12 +126,52 @@ export class GardenModuleV2 implements IModule {
     tickGardenGrowth(delta, gameState.plots);
     tickGardenGrowth(delta, gameState.friendPlots);
     tickFriendGardenRegrowth(delta);
-    if (this.scene) this.chaser.update(this.scene, delta, performance.now() * 0.001);
+    const nearFriendGarden = this.player
+      ? Math.hypot(this.player.position.x - (-18), this.player.position.z - (-2)) < 22
+      : true;
+
+    if (this.scene) {
+      if (nearFriendGarden) {
+        // Keep chaser motion continuous near the player to avoid periodic hitching.
+        this.chaserUpdateAccum = 0;
+        this.chaser.update(this.scene, Math.min(delta, 1 / 30), this.elapsedSec);
+      } else {
+        this.chaserUpdateAccum += delta;
+        if (this.chaserUpdateAccum >= 1 / 6) {
+          const step = Math.min(this.chaserUpdateAccum, 0.1);
+          this.chaserUpdateAccum = 0;
+          this.chaser.update(this.scene, step, this.elapsedSec);
+        }
+      }
+    }
+
     this.plotFx?.update(delta);
     this.plotFxFriend?.update(delta);
+
+    // Self garden follows the player camera, so update continuously for smoothness.
     syncGardenPlotVisuals(this.selfHandles, gameState.plots, this.player?.position);
-    syncGardenPlotVisuals(this.friendHandles, gameState.friendPlots, this.player?.position);
-    this.updateFriendActionButtons();
+
+    if (nearFriendGarden) {
+      this.friendVisualSyncAccum = 0;
+      syncGardenPlotVisuals(this.friendHandles, gameState.friendPlots, this.player?.position);
+    } else {
+      this.friendVisualSyncAccum += delta;
+      if (this.friendVisualSyncAccum >= 1 / 4) {
+        this.friendVisualSyncAccum = 0;
+        syncGardenPlotVisuals(this.friendHandles, gameState.friendPlots, this.player?.position);
+      }
+    }
+
+    if (nearFriendGarden) {
+      this.friendButtonsSyncAccum = 0;
+      this.updateFriendActionButtons();
+    } else {
+      this.friendButtonsSyncAccum += delta;
+      if (this.friendButtonsSyncAccum >= 0.12) {
+        this.friendButtonsSyncAccum = 0;
+        this.updateFriendActionButtons();
+      }
+    }
   }
 
   onPointerDown(hits: THREE.Intersection[], event: PointerEvent): void {
@@ -198,6 +249,7 @@ export class GardenModuleV2 implements IModule {
   }
 
   private attachFriendActionButtons(): void {
+    this.friendActionWidgets.length = 0;
     for (let i = 0; i < this.friendHandles.length; i++) {
       const h = this.friendHandles[i]!;
       const bless = makeCanvasBadge('祝福', 'rgba(28,61,96,0.88)', 'rgba(109,186,255,0.95)');
@@ -215,6 +267,7 @@ export class GardenModuleV2 implements IModule {
       steal.position.set(0.55, 1.5, 0);
       steal.visible = false;
       h.root.add(steal);
+      this.friendActionWidgets.push({ bless, steal });
     }
   }
 
@@ -225,8 +278,9 @@ export class GardenModuleV2 implements IModule {
       const plot = gameState.friendPlots[i];
       const near = Math.hypot(this.player.position.x - h.root.position.x, this.player.position.z - h.root.position.z) < 4.2;
       const show = Boolean(plot && plot.stage === 4 && near);
-      const bless = h.root.children.find((c) => c.userData?.kind === FRIEND_ACTION_BUTTON_KIND && c.userData?.action === 'bless') as THREE.Sprite | undefined;
-      const steal = h.root.children.find((c) => c.userData?.kind === FRIEND_ACTION_BUTTON_KIND && c.userData?.action === 'steal') as THREE.Sprite | undefined;
+      const widgets = this.friendActionWidgets[i];
+      const bless = widgets?.bless;
+      const steal = widgets?.steal;
       const giant = Boolean(plot?.giantBloom);
       const y = giant ? 2.05 : 1.5;
       const xOffset = giant ? 0.88 : 0.55;

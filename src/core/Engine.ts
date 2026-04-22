@@ -35,6 +35,7 @@ export class Engine {
   private readonly moveDir = new THREE.Vector3();
   private readonly tmpVec = new THREE.Vector3();
   private readonly tmpVec2 = new THREE.Vector3();
+  private readonly tmpQuat = new THREE.Quaternion();
   private readonly worldUp = new THREE.Vector3(0, 1, 0);
   private readonly walkMoveSpeed = 6.8;
   private readonly runMoveSpeed = 11.4;
@@ -666,8 +667,8 @@ export class Engine {
 
       // 与 soldier 子网格的 Math.PI 偏转叠加后，仍面向移动方向（避免视觉上“倒着走”）
       const targetYaw = Math.atan2(-worldX, -worldZ);
-      const q = new THREE.Quaternion().setFromAxisAngle(this.worldUp, targetYaw);
-      this.player.quaternion.slerp(q, 1 - Math.exp(-12 * delta));
+      this.tmpQuat.setFromAxisAngle(this.worldUp, targetYaw);
+      this.player.quaternion.slerp(this.tmpQuat, 1 - Math.exp(-12 * delta));
     } else {
       this.moveSpeed += (this.walkMoveSpeed - this.moveSpeed) * Math.min(1, delta * 8);
     }
