@@ -5,6 +5,9 @@ import { SEED_CONFIG } from './types';
 
 export type GardenPlotVisualHandles = { root: THREE.Group; plant: THREE.Group };
 
+const STAGE_STEM_H = [0, 0.22, 0.45, 0.72, 0.88];
+const STAGE_HEAD_S = [0, 0.22, 0.38, 0.58, 0.95];
+
 /**
  * 茎 + 按种子切换花冠几何（迁移包逻辑：单头 mesh + HEAD_GEOMETRIES），浇水/施肥提示与粒子由 userData 驱动。
  */
@@ -26,8 +29,6 @@ export function syncGardenPlotVisuals(
   plots: PlotRuntime[],
   playerPos?: THREE.Vector3,
 ): void {
-  const stageStemH = [0, 0.22, 0.45, 0.72, 0.88];
-  const stageHeadS = [0, 0.22, 0.38, 0.58, 0.95];
   const t = performance.now() * 0.001;
 
   for (let i = 0; i < handles.length; i++) {
@@ -76,8 +77,8 @@ export function syncGardenPlotVisuals(
       headMat.emissiveIntensity = plot.stage >= 4 ? 0.12 : 0.04;
     }
 
-    const sh = stageStemH[plot.stage] ?? 0.5;
-    const hs = stageHeadS[plot.stage] ?? 0.5;
+    const sh = STAGE_STEM_H[plot.stage] ?? 0.5;
+    const hs = STAGE_HEAD_S[plot.stage] ?? 0.5;
 
     stem.scale.set(1, sh / 0.85, 1);
     stem.position.y = (sh * 0.85) * 0.5 + 0.02;
@@ -179,13 +180,14 @@ export function syncGardenPlotVisuals(
       const needWater = plot.stage === 2 && plot.needsWater;
       const needFertilizer = plot.stage === 3 && plot.needsFertilizer && plot.fertilizerCooldown <= 0;
       const needsAction = needWater || needFertilizer;
+      if (!needsAction) {
+        actionPrompt.visible = false;
+        continue;
+      }
 
       const promptText = needWater ? '需要浇水' : needFertilizer ? '需要施肥' : '';
       const waitText = needFertilizer && plot.fertilizerCooldown > 0 ? `等待施肥 ${plot.fertilizerCooldown.toFixed(1)}s` : '';
-      const near =
-        needsAction && playerPos
-          ? Math.hypot(playerPos.x - plant.parent!.position.x, playerPos.z - plant.parent!.position.z) < 4.2
-          : false;
+      const near = playerPos ? Math.hypot(playerPos.x - root.position.x, playerPos.z - root.position.z) < 4.2 : false;
       actionPrompt.visible = Boolean(near);
       if (near) {
         actionPrompt.position.y = head.position.y + 1.02 + Math.sin(t * 4 + i * 0.5) * 0.04;

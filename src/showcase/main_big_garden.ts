@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+﻿import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { SEED_CONFIG, SEED_IDS, type SeedId } from '../modules/garden/types';
 import {
@@ -444,7 +444,16 @@ type PlotLifeState = {
   rainbowBloom: boolean;
   matureProgress: number;
   matureClusterReady: boolean;
-  transitionPulse: number; // 过渡脉冲动画（0-1）
+  transitionPulse: number; // transition animation pulse
+};
+
+type RackPlotPrompt = {
+  rackId: string;
+  group: THREE.Group;
+  hitBox: THREE.Mesh;
+  centerWorld: THREE.Vector3;
+  firstEmptyCell: THREE.Mesh | null;
+  lockedSeed: SeedId | null;
 };
 
 type PlotFx = {
@@ -508,6 +517,9 @@ const isSharedPlantMaterial = (material: THREE.Material): boolean => {
   }
   return false;
 };
+
+const isRackPlotCell = (cell: THREE.Mesh): boolean =>
+  (cell.userData.plotKind as string | undefined) === 'rack' || typeof cell.userData.rackId === 'string';
 
 function disposePlantVisual(root: THREE.Object3D): void {
   root.traverse((obj) => {
@@ -759,7 +771,7 @@ function addPlantingSubplots(
   }
 }
 
-// ── Border decoration helpers ────────────────────────────────────────────────
+// 鈹€鈹€ Border decoration helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 function addBorderStone(root: THREE.Group, x: number, z: number, scale: number, tall = false, collector?: THREE.Object3D[]): void {
   const mat = getSharedStaticStandardMaterial({
@@ -1160,7 +1172,7 @@ const ZONE_STORAGE_KEY = 'ft_garden_custom_zones_v2';
 const LEGACY_ZONE_STORAGE_KEYS = ['ft_garden_custom_zones_v1'];
 const SWING_ZONE_CLEANUP_ONCE_KEY = 'ft_garden_swing_zone_cleanup_v2_done';
 const ROLLBACK_LATEST_ZONE_ONCE_KEY = 'ft_garden_rollback_latest_zone_once_v1_done';
-const ZONE_CREATE_COST = 50; // 每次创建种植区域消耗50金币
+const ZONE_CREATE_COST = 50; // 姣忔鍒涘缓绉嶆鍖哄煙娑堣€?0閲戝竵
 
 function loadSavedZones(): SavedZone[] {
   try {
@@ -1446,24 +1458,18 @@ function addRosePergola(root: THREE.Group, x: number, z: number, angleY: number,
     opacity: 0.32,
     depthWrite: true,
   });
-  const laneXs = [-1.35, -0.67, 0, 0.67, 1.35] as const;
-  const laneZs = [-0.95, 0.95] as const;
-  for (const lx of laneXs) {
-    for (const lz of laneZs) {
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.06, 0.24), slotCapMat);
-      cap.position.set(lx, topY + 0.09, lz);
-      cap.receiveShadow = true;
-      cap.castShadow = false;
-      cap.visible = true;
-      cap.userData.plotCell = true;
-      cap.userData.plotKind = 'rack';
-      cap.userData.rackId = resolvedRackId;
-      cap.userData.planted = false;
-      cap.userData.seedId = null;
-      cap.userData.flower = null;
-      g.add(cap);
-    }
-  }
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.3), slotCapMat);
+  cap.position.set(0, topY + 0.09, 0);
+  cap.receiveShadow = true;
+  cap.castShadow = false;
+  cap.visible = true;
+  cap.userData.plotCell = true;
+  cap.userData.plotKind = 'rack';
+  cap.userData.rackId = resolvedRackId;
+  cap.userData.planted = false;
+  cap.userData.seedId = null;
+  cap.userData.flower = null;
+  g.add(cap);
 }
 
 function addWallPlanters(root: THREE.Group, x: number, z: number, width: number): void {
@@ -2058,7 +2064,7 @@ function buildGarden(scene: THREE.Scene): THREE.Group {
     { x: 8.8, z: 3.8, r: 1.75, color: 0xffd1e8 },
     { x: 8.8, z: -0.6, r: 1.7, color: 0xffe6a8 },
   ];
-  // 用户通过绘制添加种植区域，不预设圆形种植区
+  // 鐢ㄦ埛閫氳繃缁樺埗娣诲姞绉嶆鍖哄煙锛屼笉棰勮鍦嗗舰绉嶆鍖?
   // addGroundZonesWithClearance(root, desiredZones, blocked);
 
   addFlowerWallZone(root, -8.8, -2.6, 1.2, 5.2);
@@ -2141,7 +2147,7 @@ function bootstrap(): void {
   const gardenGroundY = gardenRoot.position.y + 0.36 * gardenScale;
   const drawSurfaceY = gardenGroundY + 0.02;
   const playerGroundY = gardenGroundY - 0.06;
-  // 加载已保存的区域
+  // 鍔犺浇宸蹭繚瀛樼殑鍖哄煙
   const loadedZones = loadSavedZones();
   const cleanedZones = cleanupLegacySwingZonesOnce(loadedZones);
   const savedZones = rollbackLatestZoneOnce(cleanedZones);
@@ -2181,8 +2187,7 @@ function bootstrap(): void {
   drawHud.style.font = '12px/1.4 "Segoe UI","PingFang SC",sans-serif';
   drawHud.style.zIndex = '12';
   drawHud.style.display = 'none';
-  drawHud.textContent = 'G: 鍒掑尯妯″紡 | 宸﹂敭: 鍔犵偣 | Enter: 鐢熸垚绉嶆鍖?| Backspace: 鎾ら攢鐐?| Esc: 鍙栨秷';
-  drawHud.textContent = 'WASD: move | Shift: run | G: draw mode | P: sow mode | Enter: commit area';
+  drawHud.textContent = 'WASD: 移动 | Shift: 奔跑 | G: 画区 | P: 种植 | Enter: 确认';
   document.body.appendChild(drawHud);
   drawHud.remove();
 
@@ -2199,7 +2204,7 @@ function bootstrap(): void {
   actionHud.style.zIndex = '13';
   actionHud.style.display = 'none';
   actionHud.style.pointerEvents = 'none';
-  actionHud.textContent = '鐐瑰嚮鍦板潡: 绉嶆 / 娴囨按 / 鏂借偉';
+  actionHud.textContent = '操作提示：移动 / 浇水 / 施肥 / 收获';
   document.body.appendChild(actionHud);
 
   const sowModeBtn = document.createElement('button');
@@ -2218,13 +2223,13 @@ function bootstrap(): void {
   sowModeBtn.style.transition = 'bottom 180ms ease, background 180ms ease, border-color 180ms ease';
   sowModeBtn.style.cursor = 'pointer';
   sowModeBtn.style.zIndex = '21';
-  sowModeBtn.textContent = 'Sow mode: off';
+  sowModeBtn.textContent = '进入种植';
   document.body.appendChild(sowModeBtn);
-  sowModeBtn.textContent = '馃尡 杩涘叆鎾妯″紡';
+  sowModeBtn.textContent = '进入种植';
 
 
   const resetBtn = document.createElement('button');
-  resetBtn.textContent = '🔄 重置花园';
+  resetBtn.textContent = '重置花园';
   resetBtn.style.position = 'fixed';
   resetBtn.style.right = '54px';
   resetBtn.style.bottom = '12px';
@@ -2237,7 +2242,7 @@ function bootstrap(): void {
   resetBtn.style.cursor = 'pointer';
   resetBtn.style.zIndex = '22';
   resetBtn.addEventListener('click', () => {
-    if (confirm('确定要重置花园吗？这将清除所有种植区域和植物。')) {
+    if (confirm('确定要重置花园吗？这会清除所有种植区域和植物。')) {
       localStorage.removeItem('ft_garden_custom_zones_v2');
       localStorage.removeItem('ft_garden_plants_v1');
       localStorage.removeItem('ft_garden_rollback_latest_zone_once_v1_done');
@@ -2297,7 +2302,7 @@ function bootstrap(): void {
     'WASD / 方向键：移动，Shift：跑步，B：打开商店，P：切换种植模式<br/>',
     '鼠标左键拖动时旋转，滚轮缩放，右键平移<br/>',
     '种植模式开启：显示底部种子列表，可在地块播种<br/>',
-    '种植模式关闭：隐藏种子列表，可继续浇水 / 施肥 / 收获<br/>',
+    '种植模式关闭：隐藏种子列表，但仍可继续浇水 / 施肥 / 收获<br/>',
     'G：进入画区模式，左键加点，Enter/空格确认，Backspace取消，Esc取消',
     '</div>',
   ].join('');
@@ -2311,8 +2316,8 @@ function bootstrap(): void {
   helpMask.addEventListener('click', () => setHelpVisible(false));
   helpClose.addEventListener('click', () => setHelpVisible(false));
 
-  // 种植区域创建消耗常量
-  const ZONE_CREATE_COST = 50; // 每次创建种植区域消耗50金币
+  // 绉嶆鍖哄煙鍒涘缓娑堣€楀父閲?
+  const ZONE_CREATE_COST = 50; // 姣忔鍒涘缓绉嶆鍖哄煙娑堣€?0閲戝竵
 
   const seedState: ShowcaseSeedState = {
     gold: 0,
@@ -2463,12 +2468,12 @@ function bootstrap(): void {
   shopPanel.appendChild(shopHeader);
 
   const shopTitle = document.createElement('div');
-  shopTitle.textContent = '绉嶅瓙鍟嗗簵';
+  shopTitle.textContent = '花园商店';
   shopTitle.style.font = '700 18px/1.2 "Segoe UI","PingFang SC",sans-serif';
   shopHeader.appendChild(shopTitle);
 
   const shopClose = document.createElement('button');
-  shopClose.textContent = '鍏抽棴';
+    shopClose.textContent = '关闭';
   shopClose.style.padding = '6px 10px';
   shopClose.style.border = '1px solid rgba(190,220,204,0.35)';
   shopClose.style.background = 'rgba(42,58,52,0.9)';
@@ -2507,6 +2512,33 @@ function bootstrap(): void {
     line: null as THREE.Line | null,
     fill: null as THREE.Mesh | null,
   };
+  const runtimeErrorPanel = document.createElement('div');
+  runtimeErrorPanel.style.position = 'fixed';
+  runtimeErrorPanel.style.left = '12px';
+  runtimeErrorPanel.style.top = '12px';
+  runtimeErrorPanel.style.maxWidth = 'min(560px, calc(100vw - 24px))';
+  runtimeErrorPanel.style.padding = '10px 12px';
+  runtimeErrorPanel.style.borderRadius = '10px';
+  runtimeErrorPanel.style.background = 'rgba(80, 18, 18, 0.88)';
+  runtimeErrorPanel.style.border = '1px solid rgba(255, 156, 156, 0.55)';
+  runtimeErrorPanel.style.color = '#ffecec';
+  runtimeErrorPanel.style.font = '12px/1.45 "Segoe UI", "PingFang SC", sans-serif';
+  runtimeErrorPanel.style.whiteSpace = 'pre-wrap';
+  runtimeErrorPanel.style.zIndex = '999';
+  runtimeErrorPanel.style.display = 'none';
+  document.body.appendChild(runtimeErrorPanel);
+  const reportRuntimeError = (message: string): void => {
+    runtimeErrorPanel.textContent = message;
+    runtimeErrorPanel.style.display = 'block';
+    console.error(message);
+  };
+  window.addEventListener('error', (ev) => {
+    reportRuntimeError(`Runtime error: ${ev.message}\n${ev.filename}:${ev.lineno}:${ev.colno}`);
+  });
+  window.addEventListener('unhandledrejection', (ev) => {
+    const reason = ev.reason instanceof Error ? ev.reason.stack || ev.reason.message : String(ev.reason);
+    reportRuntimeError(`Unhandled rejection: ${reason}`);
+  });
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const hoverNdc = new THREE.Vector2();
@@ -2535,6 +2567,8 @@ function bootstrap(): void {
   const borderDecorObjects: THREE.Object3D[] = [];
   const activePlotCells = new Set<THREE.Mesh>();
   const promptFxCells = new Set<THREE.Mesh>();
+  const rackPrompts: RackPlotPrompt[] = [];
+  const rackPromptTargets: THREE.Object3D[] = [];
   let sowMode = false;
   const syncActivePlotCell = (cell: THREE.Mesh): void => {
     if (cell.userData.life != null) {
@@ -2545,7 +2579,7 @@ function bootstrap(): void {
   };
   const syncPlotCellVisibility = (target?: THREE.Mesh): void => {
     if (target) {
-      // 单个 cell 同步时，也遵循 sowMode 规则，只有种植模式才显示土块
+      // 鍗曚釜 cell 鍚屾鏃讹紝涔熼伒寰?sowMode 瑙勫垯锛屽彧鏈夌妞嶆ā寮忔墠鏄剧ず鍦熷潡
       target.visible = sowMode;
       const flower = target.userData.flower as THREE.Object3D | undefined;
       if (flower) flower.visible = true;
@@ -2555,12 +2589,12 @@ function bootstrap(): void {
     }
     for (const cell of plotCells) {
       const life = cell.userData.life;
-      // 种植模式下所有地块可见，非种植模式下不显示任何地块
+      // 绉嶆妯″紡涓嬫墍鏈夊湴鍧楀彲瑙侊紝闈炵妞嶆ā寮忎笅涓嶆樉绀轰换浣曞湴鍧?
       cell.visible = sowMode;
-      // 花始终可见
+      // 鑺卞缁堝彲瑙?
       const flower = cell.userData.flower as THREE.Object3D | undefined;
       if (flower) flower.visible = true;
-      // 浇水施肥特效始终可见
+      // 娴囨按鏂借偉鐗规晥濮嬬粓鍙
       const promptFx = cell.userData.promptFx as THREE.Object3D | undefined;
       if (promptFx) promptFx.visible = true;
     }
@@ -2581,6 +2615,132 @@ function bootstrap(): void {
   };
   collectPlotCells();
 
+  const createRackPromptVisual = (): { group: THREE.Group; hitBox: THREE.Mesh } => {
+    const group = new THREE.Group();
+    group.visible = false;
+
+    const baseMat = new THREE.MeshStandardMaterial({
+      color: 0x7fcf95,
+      roughness: 0.7,
+      metalness: 0.04,
+    });
+    const faceMat = new THREE.MeshStandardMaterial({
+      color: 0xf7fff9,
+      roughness: 0.85,
+      metalness: 0.01,
+    });
+    const accentMat = new THREE.MeshStandardMaterial({
+      color: 0xffc77c,
+      roughness: 0.62,
+      metalness: 0.03,
+    });
+
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.44, 0.16), baseMat);
+    body.castShadow = true;
+    body.receiveShadow = true;
+    group.add(body);
+
+    const face = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.28, 0.08), faceMat);
+    face.position.z = 0.055;
+    group.add(face);
+
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.2, 10), accentMat);
+    stem.position.set(-0.36, 0.03, 0.11);
+    stem.rotation.z = -0.45;
+    group.add(stem);
+
+    const bloom = makeFlower(0xfff0a8);
+    bloom.scale.setScalar(0.1);
+    bloom.position.set(-0.36, 0.16, 0.14);
+    group.add(bloom);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 180;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#f7fff9';
+      ctx.fillRect(14, 14, 484, 152);
+      ctx.strokeStyle = '#2e6d49';
+      ctx.lineWidth = 12;
+      ctx.strokeRect(14, 14, 484, 152);
+      ctx.fillStyle = '#2e6d49';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = 'bold 48px "Microsoft YaHei","PingFang SC",sans-serif';
+      ctx.fillText('种花', 256, 58);
+      ctx.font = 'bold 26px "Microsoft YaHei","PingFang SC",sans-serif';
+      ctx.fillText('花架', 256, 102);
+      ctx.font = 'bold 18px "Microsoft YaHei","PingFang SC",sans-serif';
+      ctx.fillText('点击种植', 256, 140);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    const label = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.12, 0.42),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false }),
+    );
+    label.renderOrder = 20;
+    label.position.set(0.02, -0.01, 0.105);
+    group.add(label);
+
+    const hitBox = new THREE.Mesh(
+      new THREE.BoxGeometry(1.25, 0.52, 0.22),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.01 }),
+    );
+    hitBox.visible = true;
+    group.add(hitBox);
+
+    return { group, hitBox };
+  };
+
+  const rebuildRackPrompts = (): void => {
+    for (const prompt of rackPrompts) {
+      scene.remove(prompt.group);
+    }
+    rackPrompts.length = 0;
+    rackPromptTargets.length = 0;
+
+    const rackIds = new Set<string>();
+    const worldPoint = new THREE.Vector3();
+    const centerWorld = new THREE.Vector3();
+    for (const cell of plotCells) {
+      const rackId = cell.userData.rackId as string | undefined;
+      if (rackId) rackIds.add(rackId);
+    }
+
+    for (const rackId of rackIds) {
+      const cells = plotCells.filter((cell) => (cell.userData.rackId as string | undefined) === rackId);
+      if (cells.length === 0) continue;
+      centerWorld.set(0, 0, 0);
+      let firstEmptyCell: THREE.Mesh | null = null;
+      let lockedSeed: SeedId | null = null;
+      for (const cell of cells) {
+        cell.getWorldPosition(worldPoint);
+        centerWorld.add(worldPoint);
+        const life = getLife(cell);
+        if (!life && !firstEmptyCell) firstEmptyCell = cell;
+        if (life) lockedSeed = life.seedId;
+      }
+      centerWorld.multiplyScalar(1 / cells.length);
+      const { group, hitBox } = createRackPromptVisual();
+      const prompt: RackPlotPrompt = {
+        rackId,
+        group,
+        hitBox,
+        centerWorld: centerWorld.clone(),
+        firstEmptyCell,
+        lockedSeed,
+      };
+      group.userData.rackPromptData = prompt;
+      hitBox.userData.rackPromptData = prompt;
+      scene.add(group);
+      rackPrompts.push(prompt);
+      rackPromptTargets.push(hitBox);
+    }
+  };
   const createFlowerSpiritRig = (): FlowerSpiritRig => {
     const root = new THREE.Group();
     root.name = 'FlowerSpiritNpc';
@@ -2746,7 +2906,7 @@ function bootstrap(): void {
   let flowerSpiritRetargetTimer = 0;
   let flowerSpiritGreetingTimer = 0;
   let flowerSpiritGreetingCooldown = 0;
-  const flowerSpiritGreetingMessages = ['花花交给我吧', '我来帮你照顾花花', '先让我飞过去', '花精灵正在巡护'];
+    const flowerSpiritGreetingMessages = ['花花交给我吧', '我来帮你照顾花花', '先让我飞过去', '花精灵正在巡护'];
   const flowerSpiritGreetingBubble = document.createElement('div');
   flowerSpiritGreetingBubble.style.position = 'fixed';
   flowerSpiritGreetingBubble.style.display = 'none';
@@ -2851,7 +3011,7 @@ function bootstrap(): void {
   flowerSpiritCooldownRow.appendChild(flowerSpiritCooldownLine);
 
   const flowerSpiritCooldownLabel = document.createElement('span');
-  flowerSpiritCooldownLabel.textContent = '⏳ 照护进度';
+  flowerSpiritCooldownLabel.textContent = '照护进度';
   flowerSpiritCooldownLabel.style.minWidth = '56px';
   flowerSpiritCooldownLabel.style.opacity = '0.86';
   flowerSpiritCooldownLine.appendChild(flowerSpiritCooldownLabel);
@@ -2953,7 +3113,7 @@ function bootstrap(): void {
     flowerSpiritEnergyText.textContent = `${flowerSpiritState.energy}/${flowerSpiritState.maxEnergy}`;
     flowerSpiritCostTag.textContent = `补能 +${flowerSpiritState.refillAmount} / ${flowerSpiritState.refillCost} 金币`;
     flowerSpiritRefillBtn.textContent = `补充能量 -${flowerSpiritState.refillCost} 金币`;
-    flowerSpiritAutoBtn.textContent = flowerSpiritState.autoCareEnabled ? '自动照护：开' : '自动照护：停';
+    flowerSpiritAutoBtn.textContent = flowerSpiritState.autoCareEnabled ? '自动照护：开' : '自动照护：关';
     flowerSpiritRefillBtn.disabled = seedState.gold < flowerSpiritState.refillCost || flowerSpiritState.energy >= flowerSpiritState.maxEnergy;
     flowerSpiritRefillBtn.style.opacity = flowerSpiritRefillBtn.disabled ? '0.58' : '1';
     flowerSpiritRefillBtn.style.cursor = flowerSpiritRefillBtn.disabled ? 'not-allowed' : 'pointer';
@@ -2968,16 +3128,16 @@ function bootstrap(): void {
       : '0 8px 16px rgba(10, 18, 30, 0.18)';
     flowerSpiritCooldownFill.style.width = `${Math.max(0, Math.min(1, cooldownRatio)) * 100}%`;
     flowerSpiritCooldownText.textContent = energyEmpty
-      ? '🌸 返航中，等你补能'
+      ? '返回中，等待补能'
       : flowerSpiritActionCooldown > 0
-        ? `🌼 冷却 ${flowerSpiritActionCooldown.toFixed(1)}s`
+        ? `冷却 ${flowerSpiritActionCooldown.toFixed(1)}s`
         : flowerSpiritCareTarget.cell && flowerSpiritCareTarget.kind
-          ? (flowerSpiritCareApproachTimer > 0 ? '🪽 飞向花花' : '🌷 准备照护')
-          : (flowerSpiritState.autoCareEnabled ? '🌿 巡游中' : '自动照护已暂停');
+          ? (flowerSpiritCareApproachTimer > 0 ? '飞向花朵' : '准备照护')
+          : (flowerSpiritState.autoCareEnabled ? '巡游中' : '自动照护已暂停');
 
     if (energyEmpty) {
-      flowerSpiritStatus.textContent = '状态：能量为空，先补充能量后才能照顾花花';
-      flowerSpiritHint.textContent = '她会先飞回你身边，等补能后再继续照顾花花。';
+      flowerSpiritStatus.textContent = '状态：能量为空，先补充能量再照护花朵';
+      flowerSpiritHint.textContent = '她会先飞回你身边，补能后再继续照顾花朵。';
       flowerSpiritStatus.style.color = '#ffd7e8';
     } else if (flowerSpiritCareTarget.cell && flowerSpiritCareTarget.kind) {
       const cellIndex = plotCells.indexOf(flowerSpiritCareTarget.cell);
@@ -2985,10 +3145,10 @@ function bootstrap(): void {
       flowerSpiritHint.textContent = '她会先飞到花前，再一朵一朵完成照护。';
       flowerSpiritStatus.style.color = '#f3dcff';
     } else {
-      flowerSpiritStatus.textContent = flowerSpiritState.autoCareEnabled ? '状态：巡游中，寻找需要照护的花花' : '状态：自动照护已暂停';
+      flowerSpiritStatus.textContent = flowerSpiritState.autoCareEnabled ? '状态：巡游中，寻找需要照护的花朵' : '状态：自动照护已暂停';
       flowerSpiritHint.textContent = flowerSpiritState.autoCareEnabled
-        ? '可以随时补充能量，让她继续帮你照顾花花。'
-        : '暂停后她只会自由飞行，不会自动照护花花。';
+        ? '可以随时补充能量，让她继续帮你照顾花朵。'
+        : '暂停后她只会自由飞行，不会自动照护花朵。';
       flowerSpiritStatus.style.color = '#f3dcff';
     }
   };
@@ -3262,8 +3422,8 @@ function bootstrap(): void {
         flowerSpiritGreetingBubble.textContent = '先帮我补充能量吧';
       } else if (flowerSpiritCareTarget.cell && flowerSpiritCareTarget.kind) {
         flowerSpiritGreetingBubble.textContent = flowerSpiritCareTarget.kind === 'water'
-          ? '我先飞近一点，再给花花浇水'
-          : '我先飞近一点，再给花花施肥';
+          ? '我先飞近一点，再给花朵浇水'
+          : '我先飞近一点，再给花朵施肥';
       } else {
         flowerSpiritGreetingBubble.textContent = flowerSpiritGreetingMessages[Math.floor(Math.random() * flowerSpiritGreetingMessages.length)]!;
       }
@@ -3320,7 +3480,7 @@ function bootstrap(): void {
       ? 'linear-gradient(180deg, rgba(70,115,84,0.96), rgba(43,84,62,0.98))'
       : 'linear-gradient(180deg, rgba(41,64,83,0.94), rgba(28,44,58,0.96))';
     sowModeBtn.style.borderColor = enabled ? 'rgba(206,242,220,0.56)' : 'rgba(178,228,206,0.42)';
-    sowModeBtn.textContent = enabled ? '🌱 退出种植' : '🌱 进入种植';
+    sowModeBtn.textContent = enabled ? '退出种植' : '进入种植';
     actionHud.textContent = enabled ? '种植模式：点击地块种植或养护' : '普通模式：浇水/施肥/收获';
   };
   setSowMode(false);
@@ -3368,6 +3528,17 @@ function bootstrap(): void {
     zoneCostValue.textContent = `建区 ${getNextZoneCreateCost() === 0 ? '首次免费' : `${getNextZoneCreateCost()} 金币`}`;
   };
 
+  const getLife = (cell: THREE.Mesh): PlotLifeState | null => {
+    const life = (cell.userData.life as PlotLifeState | undefined) ?? null;
+    if (!life) return null;
+    if (typeof life.matureProgress !== 'number') life.matureProgress = life.stage === 4 ? 1 : 0;
+    if (typeof life.matureClusterReady !== 'boolean') life.matureClusterReady = life.stage === 4;
+    if (typeof life.rainbowBloom !== 'boolean') life.rainbowBloom = false;
+    return life;
+  };
+
+  rebuildRackPrompts();
+
   const plotEffects: PlotFx[] = [];
   const pendingPlotVisualRefresh = new Set<THREE.Mesh>();
   const STAGE1_GROW_RATE = 0.13;
@@ -3379,19 +3550,10 @@ function bootstrap(): void {
   const RAINBOW_BLOOM_CHANCE = 0.22;
   const GIANT_RAINBOW_BLOOM_CHANCE = 0.16;
 
-  const getLife = (cell: THREE.Mesh): PlotLifeState | null => {
-    const life = (cell.userData.life as PlotLifeState | undefined) ?? null;
-    if (!life) return null;
-    if (typeof life.matureProgress !== 'number') life.matureProgress = life.stage === 4 ? 1 : 0;
-    if (typeof life.matureClusterReady !== 'boolean') life.matureClusterReady = life.stage === 4;
-    if (typeof life.rainbowBloom !== 'boolean') life.rainbowBloom = false;
-    return life;
-  };
-
   const clearPlantVisual = (cell: THREE.Mesh): void => {
     const existing = cell.userData.flower as THREE.Object3D | undefined;
     if (existing) {
-      gardenRoot.remove(existing);
+      existing.parent?.remove(existing);
       disposePlantVisual(existing);
     }
     cell.userData.flower = null;
@@ -3401,7 +3563,7 @@ function bootstrap(): void {
     const existing = cell.userData.promptFx as THREE.Object3D | undefined;
     if (!existing) return;
     promptFxCells.delete(cell);
-    gardenRoot.remove(existing);
+    existing.parent?.remove(existing);
     existing.traverse((obj) => {
       if (!(obj instanceof THREE.Mesh)) return;
       obj.geometry?.dispose();
@@ -3633,7 +3795,270 @@ function bootstrap(): void {
     return g;
   };
 
-  const buildPlantVisual = (life: PlotLifeState): THREE.Group => {
+  const makeRackFlowerNode = (seed: SeedId, bloomScale: number, hang = false): THREE.Group => {
+    const g = new THREE.Group();
+    const stemMat = getSharedPlantToonMaterial(0x6fa55c);
+    const stem = new THREE.Mesh(sharedPlantGeometries.cylinder, stemMat);
+    const stemHeight = hang ? 0.24 : 0.12;
+    stem.scale.set(0.022, stemHeight, 0.022);
+    stem.position.y = hang ? -stemHeight * 0.5 : stemHeight * 0.5;
+    stem.rotation.z = hang ? 0.12 : 0;
+    g.add(stem);
+
+    const blossom = makeBloomHead(seed, bloomScale * (hang ? 1.34 : 1.48));
+    blossom.scale.setScalar(hang ? 1.42 : 1.56);
+    blossom.position.y = hang ? -stemHeight - 0.02 : stemHeight + 0.01;
+    g.add(blossom);
+
+    const extraCount = hang ? 5 : 5;
+    for (let i = 0; i < extraCount; i++) {
+      const angle = (i / extraCount) * Math.PI * 2 + (hang ? 0.2 : 0);
+      const bud = makeBloomHead(seed, bloomScale * (hang ? 0.6 : 0.8));
+      bud.scale.setScalar(hang ? 1.0 : 1.06);
+      bud.position.set(
+        Math.cos(angle) * (hang ? 0.11 : 0.18),
+        (hang ? -stemHeight - 0.1 : stemHeight + 0.05) + Math.sin(angle * 1.4) * 0.035,
+        Math.sin(angle) * (hang ? 0.08 : 0.15),
+      );
+      bud.rotation.y = angle;
+      g.add(bud);
+    }
+    return g;
+  };
+
+  const buildRackPlantVisual = (cell: THREE.Mesh, life: PlotLifeState): THREE.Group => {
+    const seed = life.seedId;
+    const g = new THREE.Group();
+    const stageProgress = life.stage === 4 ? life.matureProgress : life.growProgress;
+    const reveal = THREE.MathUtils.clamp(stageProgress, 0, 1);
+    const slots: THREE.Group[] = [];
+    const rackSlotCap = 68;
+    type RackSlotLayout = {
+      x: number;
+      y: number;
+      z: number;
+      tier: 1 | 2 | 3 | 4;
+      kind: 'top' | 'post' | 'hang';
+      scale: number;
+      swaySeed: number;
+      chainDepth: number;
+      revealKey: number;
+    };
+    const revealKeyFromEntry = (entry: RackSlotLayout): number => {
+      if (Number.isFinite(entry.revealKey)) return entry.revealKey;
+      let hash = 2166136261;
+      const text = `${entry.kind}:${entry.tier}:${entry.chainDepth}:${entry.x.toFixed(3)}:${entry.y.toFixed(3)}:${entry.z.toFixed(3)}:${entry.scale.toFixed(3)}:${entry.swaySeed.toFixed(3)}`;
+      for (let i = 0; i < text.length; i++) {
+        hash ^= text.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+      }
+      return (hash >>> 0) / 4294967296;
+    };
+    let rackLayout = cell.userData.rackPlantLayout as RackSlotLayout[] | undefined;
+    if (rackLayout && rackLayout.length > 0) {
+      if (rackLayout.length > rackSlotCap) {
+        rackLayout = [...rackLayout].sort((a, b) => revealKeyFromEntry(a) - revealKeyFromEntry(b)).slice(0, rackSlotCap);
+        cell.userData.rackPlantLayout = rackLayout;
+      }
+      for (let i = 0; i < rackLayout.length; i++) {
+        const entry = rackLayout[i]!;
+        const slot = makeRackFlowerNode(seed, entry.scale, entry.kind === 'hang');
+        slot.position.set(entry.x, entry.y, entry.z);
+        slot.rotation.x = THREE.MathUtils.randFloatSpread(entry.kind === 'hang' ? 0.2 : 0.12);
+        slot.rotation.y = (entry.kind === 'hang' ? 0.16 : -0.08) + (entry.x + entry.z) * 0.03 + entry.swaySeed * 0.12;
+        slot.rotation.z = THREE.MathUtils.randFloatSpread(entry.kind === 'hang' ? 0.3 : 0.2);
+        slot.userData.rackSlotKind = entry.kind;
+        slot.userData.rackSlotTier = entry.tier;
+        slot.userData.rackSlotNoise = THREE.MathUtils.clamp((entry.swaySeed % 1) * 0.9 + 0.05, 0.05, 0.95);
+        slot.userData.rackSlotChainDepth = entry.chainDepth;
+        slot.userData.baseScale = 1;
+        slot.userData.basePosition = slot.position.clone();
+        slot.userData.baseRotationY = slot.rotation.y;
+        slot.userData.baseRotationX = slot.rotation.x;
+        slot.userData.baseRotationZ = slot.rotation.z;
+        slot.userData.rackSlotRevealKey = revealKeyFromEntry(entry);
+        slot.visible = false;
+        g.add(slot);
+        slots.push(slot);
+      }
+    } else {
+      rackLayout = [];
+      cell.userData.rackPlantLayout = rackLayout;
+    }
+    const addSlot = (
+      x: number,
+      y: number,
+      z: number,
+      tier: 1 | 2 | 3 | 4,
+      kind: 'top' | 'post' | 'hang',
+      scale: number,
+      swaySeed = 0,
+      chainDepth = 0,
+    ): void => {
+      if (slots.length >= rackSlotCap) return;
+      const slot = makeRackFlowerNode(seed, scale, kind === 'hang');
+      const jitterX = THREE.MathUtils.randFloatSpread(kind === 'hang' ? 0.06 : 0.06);
+      const jitterY = THREE.MathUtils.randFloatSpread(kind === 'hang' ? 0.08 : 0.05);
+      const jitterZ = THREE.MathUtils.randFloatSpread(kind === 'hang' ? 0.06 : 0.05);
+      slot.position.set(x + jitterX, y + jitterY, z + jitterZ);
+      slot.rotation.x = THREE.MathUtils.randFloatSpread(kind === 'hang' ? 0.65 : 0.4);
+      slot.rotation.y = (kind === 'hang' ? 0.16 : -0.08) + (x + z) * 0.03 + swaySeed * 0.12;
+      slot.rotation.z = THREE.MathUtils.randFloatSpread(kind === 'hang' ? 0.7 : 0.34);
+      slot.userData.rackSlotKind = kind;
+      slot.userData.rackSlotTier = tier;
+      slot.userData.rackSlotNoise = Math.random();
+      slot.userData.rackSlotChainDepth = chainDepth;
+      slot.userData.baseScale = 1;
+      slot.userData.basePosition = slot.position.clone();
+      slot.userData.baseRotationY = slot.rotation.y;
+      slot.userData.baseRotationX = slot.rotation.x;
+      slot.userData.baseRotationZ = slot.rotation.z;
+      slot.userData.rackSlotRevealKey = rand();
+      slot.visible = false;
+      g.add(slot);
+      slots.push(slot);
+      rackLayout!.push({ x, y, z, tier, kind, scale, swaySeed, chainDepth, revealKey: slot.userData.rackSlotRevealKey as number });
+    };
+
+    const rackKey = `${cell.userData.rackId ?? 'rack'}:${seed}`;
+    let rackHash = 2166136261;
+    for (let i = 0; i < rackKey.length; i++) {
+      rackHash ^= rackKey.charCodeAt(i);
+      rackHash = Math.imul(rackHash, 16777619);
+    }
+    let rackState = rackHash >>> 0;
+    const rand = (): number => {
+      rackState ^= rackState << 13;
+      rackState ^= rackState >>> 17;
+      rackState ^= rackState << 5;
+      return (rackState >>> 0) / 4294967296;
+    };
+    const randRange = (min: number, max: number): number => min + (max - min) * rand();
+    const pick = <T>(values: readonly T[]): T => values[Math.floor(rand() * values.length)]!;
+    const topY = 2.1;
+    const postX = 1.35;
+    const postZ = 0.95;
+
+    const topYs = [topY + 0.02, topY - 0.02, topY - 0.08] as const;
+    for (const z of [-0.95, 0.95] as const) {
+      const clusterCount = 4 + Math.floor(rand() * 3);
+      for (let c = 0; c < clusterCount; c++) {
+        const clusterX = randRange(-1.18, 1.18);
+        const clusterY = pick(topYs) + randRange(-0.04, 0.04);
+        const clusterZ = z + randRange(-0.08, 0.08);
+        const flowerCount = 2 + Math.floor(rand() * 3);
+        for (let i = 0; i < flowerCount; i++) {
+          if (rand() < 0.14) continue;
+          addSlot(
+            clusterX + randRange(-0.24, 0.24),
+            clusterY + randRange(-0.05, 0.05),
+            clusterZ + randRange(-0.08, 0.08),
+            1,
+            'top',
+            randRange(0.28, 0.43),
+            c * 0.31 + i * 0.17 + (z < 0 ? 0.4 : 0) + randRange(-0.18, 0.18),
+          );
+        }
+      }
+      const midCount = 6 + Math.floor(rand() * 4);
+      for (let i = 0; i < midCount; i++) {
+        const x = randRange(-1.12, 1.12);
+        if (Math.abs(x) < 0.18 && rand() < 0.28) continue;
+        const y = topY - randRange(0.06, 0.42) + (rand() < 0.2 ? randRange(-0.03, 0.06) : 0);
+        addSlot(
+          x,
+          y,
+          z + randRange(-0.14, 0.14),
+          2,
+          'top',
+          randRange(0.24, 0.37),
+          i * 0.2 + z * 0.11 + randRange(-0.15, 0.15),
+        );
+      }
+    }
+
+    for (const x of [-postX, postX] as const) {
+      for (const z of [-postZ, postZ] as const) {
+        const postBands = [
+          [1.92, 1.58, 1.25],
+          [0.98, 0.76, 0.54, 0.3, 0.08],
+        ] as const;
+        for (const band of postBands) {
+          for (let i = 0; i < band.length; i++) {
+            if (rand() < 0.22 + i * 0.05) continue;
+            addSlot(
+              x + randRange(-0.1, 0.1),
+              band[i]! + randRange(-0.08, 0.08),
+              z + randRange(-0.08, 0.08),
+              band === postBands[0] ? 2 : 3,
+              'post',
+              randRange(0.22, 0.33),
+              x * 0.11 + i * 0.2 + randRange(-0.12, 0.12),
+            );
+          }
+        }
+      }
+    }
+
+    const hangAnchors: Array<{ x: number; z: number; len: number; base: number; driftX: number; driftZ: number; }> = [];
+    for (let i = 0; i < 14; i++) {
+      const side = rand() < 0.5 ? -1 : 1;
+      const x = randRange(-1.08, 1.08);
+      const z = side < 0 ? randRange(-0.82, -0.1) : randRange(0.1, 0.82);
+      hangAnchors.push({
+        x,
+        z,
+        len: 3 + Math.floor(rand() * 3),
+        base: randRange(0.18, 0.26),
+        driftX: randRange(-0.03, 0.03),
+        driftZ: randRange(-0.02, 0.02),
+      });
+    }
+    for (let i = 0; i < hangAnchors.length; i++) {
+      const chain = hangAnchors[i]!;
+      let x = chain.x;
+      let y = topY - randRange(0.02, 0.07);
+      let z = chain.z;
+      for (let depth = 0; depth < chain.len; depth++) {
+        if (rand() < 0.22 && depth > 0) break;
+        addSlot(
+          x + randRange(-0.03, 0.03),
+          y + randRange(-0.03, 0.03),
+          z + randRange(-0.03, 0.03),
+          4,
+          'hang',
+          chain.base + randRange(0, 0.05),
+          i * 0.25 + depth * 0.18 + x * 0.1 + z * 0.12,
+          depth,
+        );
+        x += chain.driftX + randRange(-0.03, 0.03);
+        y -= randRange(0.14, 0.22);
+        z += chain.driftZ + randRange(-0.03, 0.03);
+      }
+    }
+
+    const orderedSlots = [...slots].sort((a, b) => {
+      const aKey = (a.userData.rackSlotRevealKey as number | undefined) ?? 0;
+      const bKey = (b.userData.rackSlotRevealKey as number | undefined) ?? 0;
+      return aKey - bKey;
+    });
+    orderedSlots.forEach((slot, index) => {
+      slot.userData.rackSlotRevealOrder = index;
+    });
+
+    g.userData.rackBloomSlots = slots;
+    g.userData.rackSeed = seed;
+    g.userData.rackPhaseSeed = Math.random() * Math.PI * 2;
+    g.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh)) return;
+      obj.castShadow = false;
+      obj.receiveShadow = false;
+    });
+    return g;
+  };
+
+  const buildPlantVisual = (cell: THREE.Mesh, life: PlotLifeState): THREE.Group => {
+    if (isRackPlotCell(cell)) return buildRackPlantVisual(cell, life);
     const seed = life.seedId;
     const profile = VISUAL[seed];
     const seedColor = SEED_CONFIG[seed].color;
@@ -3677,7 +4102,7 @@ function bootstrap(): void {
       g.add(bloom);
       addSpeciesSignature(g, seed, 0.48, 0.92);
     } else {
-      // 阶段4：逐渐绽放逻辑
+      // 闃舵4锛氶€愭笎缁芥斁閫昏緫
       if (!life.matureClusterReady) {
         const p = Math.min(1, Math.max(0, life.matureProgress));
         const stemHeight = 0.34 + p * 0.16;
@@ -3689,12 +4114,12 @@ function bootstrap(): void {
         const bloom = makeBloomHead(seed, bloomScale);
         bloom.position.y = stemHeight + 0.05 + p * 0.06;
         g.add(bloom);
-        // 预先创建5个分支，根据进度逐渐显示
+        // 棰勫厛鍒涘缓5涓垎鏀紝鏍规嵁杩涘害閫愭笎鏄剧ず
         const maxBranches = 5;
         for (let i = 0; i < maxBranches; i++) {
           const branchGroup = new THREE.Group();
           branchGroup.userData.branchIndex = i;
-          branchGroup.userData.isGrowingBranch = true; // 标记为成长中分支
+          branchGroup.userData.isGrowingBranch = true; // 鏍囪涓烘垚闀夸腑鍒嗘敮
           const baseAngle = maxBranches > 1 ? (i / maxBranches) * Math.PI * 2 : 0;
           branchGroup.rotation.y = baseAngle;
           branchGroup.rotation.z = -(0.45 + p * 0.35);
@@ -3712,13 +4137,13 @@ function bootstrap(): void {
         }
         addSpeciesSignature(g, seed, 0.5 + p * 0.06, 1);
       } else {
-        // 成熟时使用华丽的最终态
+        // 鎴愮啛鏃朵娇鐢ㄥ崕涓界殑鏈€缁堟€?
         const cluster = makeBranchCluster(seed, life.giantBloom);
-        cluster.userData.isFinalCluster = true; // 标记为最终花簇
-        cluster.visible = false; // 初始隐藏，由动画控制显示
+        cluster.userData.isFinalCluster = true; // 鏍囪涓烘渶缁堣姳绨?
+        cluster.visible = false; // 鍒濆闅愯棌锛岀敱鍔ㄧ敾鎺у埗鏄剧ず
         g.add(cluster);
         addSpeciesSignature(g, seed, 0.56, 1.08);
-        // 巨花放大
+        // 宸ㄨ姳鏀惧ぇ
         if (life.giantBloom) {
           g.scale.setScalar(2.08);
         }
@@ -3743,12 +4168,18 @@ function bootstrap(): void {
     clearPlantVisual(cell);
     clearPromptFx(cell);
     if (!life) return;
-    const visual = buildPlantVisual(life);
-    const wp = new THREE.Vector3();
-    cell.getWorldPosition(wp);
-    const inv = 1 / gardenRoot.scale.x;
-    visual.position.set(wp.x * inv, (wp.y - 0.01) * inv, wp.z * inv);
-    gardenRoot.add(visual);
+    const visual = buildPlantVisual(cell, life);
+    const isRack = isRackPlotCell(cell);
+    if (isRack && cell.parent) {
+      visual.position.set(0, 0, 0);
+      cell.parent.add(visual);
+    } else {
+      const wp = new THREE.Vector3();
+      cell.getWorldPosition(wp);
+      const inv = 1 / gardenRoot.scale.x;
+      visual.position.set(wp.x * inv, (wp.y - 0.01) * inv, wp.z * inv);
+      gardenRoot.add(visual);
+    }
     disableRealtimeShadows(visual);
     freezeStaticTransforms(visual);
     if (life.rainbowBloom) prepareRainbowBloomVisual(visual, life.seedId);
@@ -3771,8 +4202,17 @@ function bootstrap(): void {
         d.position.set(Math.cos(a) * 0.12, yBase + 0.05, Math.sin(a) * 0.12);
         hint.add(d);
       }
-      hint.position.set(wp.x * inv, (wp.y + yBase) * inv, wp.z * inv);
-      gardenRoot.add(hint);
+      if (isRack && cell.parent) {
+        hint.position.copy(cell.position);
+        hint.position.y += yBase;
+        cell.parent.add(hint);
+      } else {
+        const wp = new THREE.Vector3();
+        cell.getWorldPosition(wp);
+        const inv = 1 / gardenRoot.scale.x;
+        hint.position.set(wp.x * inv, (wp.y + yBase) * inv, wp.z * inv);
+        gardenRoot.add(hint);
+      }
       cell.userData.promptFx = hint;
       promptFxCells.add(cell);
     } else if (life.stage === 3 && life.needsFertilizer) {
@@ -3791,8 +4231,17 @@ function bootstrap(): void {
         p.position.set(Math.cos(a) * 0.13, 0.42, Math.sin(a) * 0.13);
         hint.add(p);
       }
-      hint.position.set(wp.x * inv, (wp.y + 0.36) * inv, wp.z * inv);
-      gardenRoot.add(hint);
+      if (isRack && cell.parent) {
+        hint.position.copy(cell.position);
+        hint.position.y += 0.36;
+        cell.parent.add(hint);
+      } else {
+        const wp = new THREE.Vector3();
+        cell.getWorldPosition(wp);
+        const inv = 1 / gardenRoot.scale.x;
+        hint.position.set(wp.x * inv, (wp.y + 0.36) * inv, wp.z * inv);
+        gardenRoot.add(hint);
+      }
       cell.userData.promptFx = hint;
       promptFxCells.add(cell);
     }
@@ -3887,32 +4336,90 @@ function bootstrap(): void {
     }
   };
 
-  // 更新植物生长动画（每帧调用）- 根据进度实时缩放植物和控制分支显示
+  // 鏇存柊妞嶇墿鐢熼暱鍔ㄧ敾锛堟瘡甯ц皟鐢級- 鏍规嵁杩涘害瀹炴椂缂╂斁妞嶇墿鍜屾帶鍒跺垎鏀樉绀?
   const updatePlantGrowthAnimation = (delta: number, phase: number): void => {
     for (const cell of activePlotCells) {
       const flower = cell.userData.flower as THREE.Group | undefined;
       const life = getLife(cell);
       if (!flower || !life) continue;
 
+      if (isRackPlotCell(cell)) {
+        const slots = flower.userData.rackBloomSlots as THREE.Group[] | undefined;
+        if (!slots || slots.length === 0) continue;
+        const reveal = life.stage === 4 ? life.matureProgress : life.growProgress;
+        const phaseSeed = (flower.userData.rackPhaseSeed as number | undefined) ?? 0;
+        const growthPhase = life.stage === 4 ? 3 + reveal : (life.stage - 1) + reveal;
+        slots.forEach((slot, index) => {
+          const tier = (slot.userData.rackSlotTier as number | undefined) ?? 1;
+          const baseScale = (slot.userData.baseScale as number | undefined) ?? 0.4;
+          const basePosition = slot.userData.basePosition as THREE.Vector3 | undefined;
+          const baseRotationX = (slot.userData.baseRotationX as number | undefined) ?? 0;
+          const baseRotationY = (slot.userData.baseRotationY as number | undefined) ?? 0;
+          const baseRotationZ = (slot.userData.baseRotationZ as number | undefined) ?? 0;
+          const slotNoise = (slot.userData.rackSlotNoise as number | undefined) ?? 0.5;
+          const slotKind = slot.userData.rackSlotKind as string | undefined;
+          const chainDepth = (slot.userData.rackSlotChainDepth as number | undefined) ?? 0;
+
+          if (basePosition) slot.position.copy(basePosition);
+
+          const revealOrder = (slot.userData.rackSlotRevealOrder as number | undefined) ?? index;
+          const revealSpan = Math.max(1, slots.length - 1);
+          const orderBias = 0.22 + (revealOrder / revealSpan) * 3.2;
+          const kindBias = slotKind === 'hang' ? 0.16 : slotKind === 'post' ? -0.04 : 0.0;
+          const tierBias = tier === 4 ? 0.18 : tier === 3 ? 0.06 : tier === 2 ? -0.05 : 0.0;
+          const chainBias = slotKind === 'hang' ? chainDepth * 0.11 : 0;
+          const appearAt = orderBias + tierBias + kindBias + chainBias + slotNoise * 0.18;
+          const visible = growthPhase >= appearAt;
+          slot.visible = visible;
+          if (!visible) return;
+
+          const tierProgress = THREE.MathUtils.clamp(growthPhase - appearAt + 0.12 + slotNoise * 0.1, 0, 1.2);
+          const pulse = 1 + Math.sin(phase * (1.7 + tier * 0.18) + phaseSeed + index * 0.35 + slotNoise * 4) * 0.025 * tierProgress;
+          const sizeBoost = tier === 4 ? 1.3 : tier === 3 ? 1.16 : tier === 2 ? 1.07 : 0.98;
+          slot.scale.setScalar((0.58 + tierProgress * 1.42) * baseScale * sizeBoost * pulse);
+
+          if (slotKind === 'hang') {
+            const chainTighten = Math.min(1, chainDepth / 4);
+            const sway = Math.sin(phase * 1.5 + phaseSeed + index * 0.58 + slotNoise * 2.8) * 0.05 * tierProgress;
+            slot.position.x += sway;
+            slot.position.y += Math.sin(phase * 1.25 + phaseSeed + index * 0.33 + slotNoise * 2.2) * 0.022 * tierProgress;
+            slot.rotation.x = baseRotationX + 0.22 + chainTighten * 0.14 + Math.sin(phase * 1.05 + phaseSeed + index * 0.18 + slotNoise * 2.2) * 0.12 * tierProgress;
+            slot.rotation.y = baseRotationY + Math.sin(phase * 1.1 + phaseSeed + index * 0.22 + slotNoise * 1.8) * 0.06 * tierProgress;
+            slot.rotation.z = baseRotationZ + Math.sin(phase * 1.65 + phaseSeed + index * 0.4 + slotNoise * 1.3) * 0.08 * tierProgress;
+            return;
+          }
+
+          slot.position.x += Math.sin(phase * 1.2 + phaseSeed + index * 0.19 + slotNoise * 3.1) * 0.015 * tierProgress;
+          slot.position.y += Math.sin(phase * 1.9 + phaseSeed + index * 0.42 + slotNoise * 2.4) * 0.015 * tierProgress;
+          slot.position.z += Math.cos(phase * 1.35 + phaseSeed + index * 0.27 + slotNoise * 1.9) * 0.012 * tierProgress;
+          slot.rotation.x = baseRotationX + Math.sin(phase * 1.25 + phaseSeed + index * 0.2 + slotNoise * 1.7) * 0.08 * tierProgress;
+          slot.rotation.y = baseRotationY + Math.sin(phase * 1.4 + phaseSeed + index * 0.22 + slotNoise * 2.1) * 0.05 * tierProgress;
+          slot.rotation.z = baseRotationZ + Math.sin(phase * 1.12 + phaseSeed + index * 0.28 + slotNoise * 1.4) * 0.1 * tierProgress;
+        });
+
+        flower.scale.setScalar(1 + reveal * 0.08);
+        continue;
+      }
+
       let targetScale = 1;
       let breathe = 1;
 
       if (life.stage === 1) {
-        // 阶段1：种子 → 发芽，逐渐长大
+        // 闃舵1锛氱瀛?鈫?鍙戣娊锛岄€愭笎闀垮ぇ
         const progress = life.growProgress;
         targetScale = 0.4 + progress * 0.6;
         if (progress > 0.65) {
           breathe = 1 + Math.sin(phase * 4) * 0.03;
         }
       } else if (life.stage === 2) {
-        // 阶段2：幼苗，逐渐长大
+        // 闃舵2锛氬辜鑻楋紝閫愭笎闀垮ぇ
         const progress = life.growProgress;
         targetScale = 0.6 + progress * 0.4;
         if (progress > 0.65) {
           breathe = 1 + Math.sin(phase * 4) * 0.04;
         }
       } else if (life.stage === 3) {
-        // 阶段3：开花中，花苞逐渐变大
+        // 闃舵3锛氬紑鑺变腑锛岃姳鑻為€愭笎鍙樺ぇ
         const progress = life.growProgress;
         targetScale = 0.75 + progress * 0.25;
         if (progress > 0.65) {
@@ -3920,10 +4427,10 @@ function bootstrap(): void {
         }
       } else if (life.stage === 4) {
         if (life.matureClusterReady) {
-          // 成熟后：显示华丽最终态 + 轻微呼吸效果
+          // 鎴愮啛鍚庯細鏄剧ず鍗庝附鏈€缁堟€?+ 杞诲井鍛煎惛鏁堟灉
           targetScale = 1;
           breathe = 1 + Math.sin(phase * 1.5) * 0.015;
-          // 渐隐绽放态，显示最终态
+          // 娓愰殣缁芥斁鎬侊紝鏄剧ず鏈€缁堟€?
           let bloomAlpha = 1;
           for (const child of flower.children) {
             if (child instanceof THREE.Group && child.userData.isGrowingBranch) {
@@ -3937,11 +4444,11 @@ function bootstrap(): void {
           }
           if (life.rainbowBloom) updateRainbowBloomVisual(flower, phase);
         } else {
-          // 成熟中：根据进度逐渐绽放 + 显示更多分支
+          // 鎴愮啛涓細鏍规嵁杩涘害閫愭笎缁芥斁 + 鏄剧ず鏇村鍒嗘敮
           const p = life.matureProgress;
           targetScale = 0.7 + p * 0.3;
           breathe = 1 + Math.sin(phase * 2) * 0.02 * p;
-          // 根据进度显示更多分支
+          // 鏍规嵁杩涘害鏄剧ず鏇村鍒嗘敮
           const visibleBranches = Math.floor(p * 5);
           for (const child of flower.children) {
             if (child instanceof THREE.Group && child.userData.isGrowingBranch) {
@@ -3951,10 +4458,10 @@ function bootstrap(): void {
         }
       }
 
-      // 应用缩放
+      // 搴旂敤缂╂斁
       flower.scale.setScalar(targetScale * breathe);
 
-      // 巨花特殊处理
+      // 宸ㄨ姳鐗规畩澶勭悊
       if (life.stage === 4 && life.giantBloom && !life.matureClusterReady) {
         flower.scale.setScalar(targetScale * breathe * 1.8);
       }
@@ -4026,6 +4533,73 @@ function bootstrap(): void {
     return null;
   };
 
+  const updateRackPrompts = (): void => {
+    const playerPos = previewPlayer.position;
+    let bestPrompt: RackPlotPrompt | null = null;
+    let bestDistSq = Number.POSITIVE_INFINITY;
+
+    for (const prompt of rackPrompts) {
+      const cells = plotCells.filter((cell) => (cell.userData.rackId as string | undefined) === prompt.rackId);
+      if (cells.length === 0) {
+        prompt.group.visible = false;
+        prompt.firstEmptyCell = null;
+        prompt.lockedSeed = null;
+        continue;
+      }
+
+      let firstEmptyCell: THREE.Mesh | null = null;
+      let lockedSeed: SeedId | null = null;
+      for (const cell of cells) {
+        const life = getLife(cell);
+        if (!life && !firstEmptyCell) firstEmptyCell = cell;
+        if (life) lockedSeed = life.seedId;
+      }
+
+      prompt.firstEmptyCell = firstEmptyCell;
+      prompt.lockedSeed = lockedSeed;
+      prompt.group.visible = false;
+
+      const distSq = playerPos.distanceToSquared(prompt.centerWorld);
+      if (firstEmptyCell && distSq < 7.5 * 7.5 && distSq < bestDistSq) {
+        bestDistSq = distSq;
+        bestPrompt = prompt;
+      }
+    }
+
+    if (!bestPrompt) return;
+    bestPrompt.group.visible = true;
+    bestPrompt.group.position.copy(bestPrompt.centerWorld).add(new THREE.Vector3(0, -1.02, 0.1));
+    bestPrompt.group.quaternion.copy(camera.quaternion);
+    bestPrompt.group.scale.setScalar(1);
+  };
+
+  const plantFromRackPrompt = (prompt: RackPlotPrompt): boolean => {
+    const cells = plotCells.filter((cell) => (cell.userData.rackId as string | undefined) === prompt.rackId);
+    if (cells.length === 0) return false;
+
+    let lockedSeed: SeedId | null = null;
+    let targetCell: THREE.Mesh | null = null;
+    for (const cell of cells) {
+      const life = getLife(cell);
+      if (!life) {
+        if (!targetCell) targetCell = cell;
+        continue;
+      }
+      lockedSeed = life.seedId;
+    }
+
+    if (lockedSeed && lockedSeed !== seedState.selectedSeed) {
+      showToast(`This rack is locked to ${SEED_CONFIG[lockedSeed].label}`);
+      return true;
+    }
+    if (!targetCell) {
+      showToast('This rack is full');
+      return true;
+    }
+    interactPlotCell(targetCell);
+    return true;
+  };
+
   const describeCellAction = (cell: THREE.Mesh): string => {
     const life = getLife(cell);
     if (!life) {
@@ -4033,30 +4607,30 @@ function bootstrap(): void {
       if (rackId) {
         const locked = getRackLockedSeed(rackId);
         if (locked && locked !== seedState.selectedSeed) {
-          return `此花架限定种植 ${SEED_CONFIG[locked].label}，请选择对应种子`;
+          return `这架花限制种子为 ${SEED_CONFIG[locked].label}，请选对应种子`;
         }
       }
     }
     if (!life) return `可种植：${SEED_CONFIG[seedState.selectedSeed].label}`;
     const stage = life.stage as PlotStage;
     if (stage === 1) {
-      if (life.needsWater) return '阶段1完成：浇水进入阶段2';
+      if (life.needsWater) return '阶段1完成：已浇水，进入阶段2';
       return `阶段1生长中：${Math.round(life.growProgress * 100)}%`;
     }
     if (stage === 2) {
-      if (life.needsWater) return '阶段2完成：浇水进入阶段3';
+      if (life.needsWater) return '阶段2完成：已浇水，进入阶段3';
       return `阶段2生长中：${Math.round(life.growProgress * 100)}%`;
     }
     if (stage === 3) {
-      if (life.needsFertilizer) return '阶段3完成：施肥进入阶段4';
+      if (life.needsFertilizer) return '阶段3完成：已施肥，进入阶段4';
       return `阶段3生长中：${Math.round(life.growProgress * 100)}%`;
     }
     if (stage === 4) {
       if (!life.matureClusterReady) return `成熟中：${Math.round(life.matureProgress * 100)}%`;
-      if (life.giantBloom && life.rainbowBloom) return '超大炫彩花开花了：现在收获！';
-      if (life.giantBloom) return '巨花开花了：现在收获！';
-      if (life.rainbowBloom) return '炫彩花开花了：现在收获！';
-      return '开花了：现在收获！';
+      if (life.giantBloom && life.rainbowBloom) return '超大炫彩花开花了：现在可收获！';
+      if (life.giantBloom) return '巨花开花了：现在可收获！';
+      if (life.rainbowBloom) return '炫彩花开花了：现在可收获！';
+      return '开花了：现在可收获！';
     }
     return `生长中：${Math.round(life.growProgress * 100)}%`;
   };
@@ -4081,14 +4655,14 @@ function bootstrap(): void {
       if (rackId) {
         const locked = getRackLockedSeed(rackId);
         if (locked && locked !== seed) {
-          showToast(`此花架限定种植 ${SEED_CONFIG[locked].label}`);
+          showToast(`这架花限定种子为 ${SEED_CONFIG[locked].label}`);
           actionHud.textContent = describeCellAction(cell);
           return;
         }
       }
       if (seedState.seeds[seed] <= 0) {
         showToast('种子不足，请去商店购买');
-        actionHud.textContent = '点击地块：种植/浇水/施肥';
+        actionHud.textContent = '点击地块：种植 / 浇水 / 施肥';
         return;
       }
       seedState.seeds[seed] -= 1;
@@ -4108,7 +4682,7 @@ function bootstrap(): void {
       cell.userData.planted = true;
       cell.userData.seedId = seed;
       enqueuePlotVisualRefresh(cell);
-      showToast(`已种植 ${SEED_CONFIG[seed].label}，阶段1开始`);
+      showToast(`已种植 ${SEED_CONFIG[seed].label}，进入阶段1`);
       finalize();
       return;
     }
@@ -4207,7 +4781,7 @@ function bootstrap(): void {
         }
       }
       spawnPlotFx(cell, 'mature');
-      showToast(`收获了 +${gain} 金币`);
+      showToast(`收获 +${gain} 金币`);
       finalize();
     }
   };
@@ -4223,9 +4797,9 @@ function bootstrap(): void {
           if (life.growProgress >= 1) {
             life.growProgress = 1;
             life.needsWater = true;
-            life.transitionPulse = 0; // 重置过渡状态
+            life.transitionPulse = 0; // 閲嶇疆杩囨浮鐘舵€?
             enqueuePlotVisualRefresh(cell);
-            showToast('阶段1完成，浇水进入阶段2', 'background');
+            showToast('阶段1完成，进入阶段2', 'background');
           }
           // 过渡动画：当进度 > 0.65 时开始脉冲效果
           if (life.growProgress > 0.65) {
@@ -4239,11 +4813,11 @@ function bootstrap(): void {
         if (life.growProgress >= 1) {
           life.growProgress = 1;
           life.needsWater = true;
-          life.transitionPulse = 0; // 重置过渡状态
+          life.transitionPulse = 0; // 閲嶇疆杩囨浮鐘舵€?
           enqueuePlotVisualRefresh(cell);
-          showToast('阶段2完成，浇水进入阶段3', 'background');
+          showToast('阶段2完成，进入阶段3', 'background');
         }
-        // 过渡动画
+        // 杩囨浮鍔ㄧ敾
         if (life.growProgress > 0.65) {
           life.transitionPulse = Math.min(1, life.transitionPulse + delta * 3);
         }
@@ -4256,9 +4830,9 @@ function bootstrap(): void {
           life.needsFertilizer = true;
           life.transitionPulse = 0;
           enqueuePlotVisualRefresh(cell);
-          showToast('阶段3完成，施肥进入阶段4', 'background');
+          showToast('阶段3完成，进入阶段4', 'background');
         }
-        // 过渡动画
+        // 杩囨浮鍔ㄧ敾
         if (life.growProgress > 0.65) {
           life.transitionPulse = Math.min(1, life.transitionPulse + delta * 3);
         }
@@ -4271,7 +4845,7 @@ function bootstrap(): void {
           life.transitionPulse = 0;
           enqueuePlotVisualRefresh(cell);
           spawnPlotFx(cell, 'mature');
-          showToast('花已完全成熟，可以收获了！', 'background');
+          showToast('花已经完全成熟，可以收获了', 'background');
         }
         continue;
       }
@@ -4377,19 +4951,19 @@ function bootstrap(): void {
     title.textContent = SEED_CONFIG[id].label;
     title.style.fontWeight = '700';
     const price = document.createElement('div');
-    price.textContent = `鍞环: ${SEED_CONFIG[id].seedPrice} 閲戝竵`;
+    price.textContent = `价格 ${SEED_CONFIG[id].seedPrice} 金币`;
     price.style.opacity = '0.86';
     info.append(title, price);
     row.appendChild(info);
 
     const owned = document.createElement('span');
-    owned.textContent = `搴撳瓨 0`;
+    owned.textContent = '拥有 0';
     owned.style.fontSize = '12px';
     row.appendChild(owned);
     shopOwnedLabels.set(id, owned);
 
     const buyBtn = document.createElement('button');
-    buyBtn.textContent = '璐拱';
+    buyBtn.textContent = '购买';
     buyBtn.style.padding = '6px 10px';
     buyBtn.style.borderRadius = '8px';
     buyBtn.style.border = '1px solid rgba(180,220,196,0.35)';
@@ -4408,7 +4982,7 @@ function bootstrap(): void {
       updateQuickHud();
       for (const seedId of SEED_IDS) {
         const ownedLabel = shopOwnedLabels.get(seedId);
-        if (ownedLabel) ownedLabel.textContent = `搴撳瓨 ${seedState.seeds[seedId]}`;
+        if (ownedLabel) ownedLabel.textContent = `库存 ${seedState.seeds[seedId]}`;
       }
     });
     row.appendChild(buyBtn);
@@ -4476,7 +5050,7 @@ function bootstrap(): void {
     // 检查金币是否足够（首次创建免费）
     const zoneCost = savedZones.length === 0 ? 0 : ZONE_CREATE_COST;
     if (seedState.gold < zoneCost) {
-      showToast(`金币不足！创建种植区域需要 ${ZONE_CREATE_COST} 金币`);
+      showToast(`金币不足，创建种植区域需要 ${ZONE_CREATE_COST} 金币`);
       return;
     }
 
@@ -4498,10 +5072,11 @@ function bootstrap(): void {
     applyToyStyle(gardenRoot, performanceProfile);
     freezeStaticTransforms(gardenRoot);
     collectPlotCells();
+    rebuildRackPrompts();
     setSowMode(true);  // 绘制完成后自动进入种植模式
     requestShadowRefresh();
     exitDrawMode(true);
-    showToast(zoneCost > 0 ? `创建成功！-${zoneCost}金币` : '首次免费创建！');
+    showToast(zoneCost > 0 ? `创建成功，消耗 ${zoneCost} 金币` : '首次免费创建');
     updateQuickHud();
     updateDrawBtnCost();
   };
@@ -4541,7 +5116,22 @@ function bootstrap(): void {
     ndc.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(ndc, camera);
 
-    // 射线检测 - 优先检测 plot cells
+    if (rackPromptTargets.length > 0) {
+      const promptHits = raycaster.intersectObjects(rackPromptTargets, true);
+      if (promptHits.length > 0) {
+        let hit: THREE.Object3D | null = promptHits[0]!.object;
+        while (hit && !hit.userData.rackPromptData) {
+          hit = hit.parent;
+        }
+        const prompt = hit?.userData.rackPromptData as RackPlotPrompt | undefined;
+        if (prompt) {
+          plantFromRackPrompt(prompt);
+          return;
+        }
+      }
+    }
+
+    // 灏勭嚎妫€娴?- 浼樺厛妫€娴?plot cells
     if (plotCells.length > 0) {
       const hits = raycaster.intersectObjects(plotCells, false);
       if (hits.length > 0) {
@@ -4554,12 +5144,12 @@ function bootstrap(): void {
       }
     }
 
-    // 如果没命中 plot cells，检测装饰物
+    // 濡傛灉娌″懡涓?plot cells锛屾娴嬭楗扮墿
     if (borderDecorObjects.length > 0) {
       const decorHits = raycaster.intersectObjects(borderDecorObjects, true);
       if (decorHits.length > 0) {
         console.log('[Garden] Hit decoration, looking for nearest plot cell');
-        // 找到被装饰物遮挡的最近的 plot cell
+        // 鎵惧埌琚楗扮墿閬尅鐨勬渶杩戠殑 plot cell
         const worldPoint = raycaster.ray.origin.clone().add(
           raycaster.ray.direction.clone().multiplyScalar(decorHits[0]!.distance)
         );
@@ -4658,7 +5248,7 @@ function bootstrap(): void {
     raycaster.setFromCamera(hoverNdc, camera);
     const hits = raycaster.intersectObjects(plotCells, false);
     if (hits.length === 0) {
-      actionHud.textContent = '鐐瑰嚮鍦板潡: 绉嶆 / 娴囨按 / 鏂借偉';
+      actionHud.textContent = '操作提示：移动 / 浇水 / 施肥 / 收获';
       return;
     }
     const cell = hits[0]!.object as THREE.Mesh;
@@ -4674,7 +5264,11 @@ function bootstrap(): void {
       const hint = cell.userData.promptFx as THREE.Group | undefined;
       if (!hint) continue;
       const life = getLife(cell);
-      if (!life || (life.stage !== 1 && life.stage !== 2 && life.stage !== 3)) {
+      const needsPrompt = !!life && (
+        ((life.stage === 1 || life.stage === 2) && life.needsWater)
+        || (life.stage === 3 && life.needsFertilizer)
+      );
+      if (!needsPrompt) {
         clearPromptFx(cell);
         continue;
       }
@@ -4751,6 +5345,7 @@ function bootstrap(): void {
     updatePlotEffects(delta);
     updatePlantGrowthAnimation(delta, animPhase);
     updatePromptFx(delta);
+    updateRackPrompts();
     updateHoverHint();
     updateFlowerSpirit(delta);
     updatePreviewPlayer(delta);
@@ -4776,4 +5371,5 @@ function bootstrap(): void {
 }
 
 bootstrap();
+
 

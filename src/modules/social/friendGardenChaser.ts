@@ -170,15 +170,15 @@ export class FriendGardenChaser {
     }
   }
 
-  update(scene: THREE.Scene, delta: number, timeSec: number): void {
-    const player = scene.getObjectByName('Player');
-    if (!player) return;
+  update(scene: THREE.Scene, delta: number, timeSec: number, player?: THREE.Object3D | null): void {
+    const targetPlayer = player ?? scene.getObjectByName('Player');
+    if (!targetPlayer) return;
 
     this.catchCooldown = Math.max(0, this.catchCooldown - delta);
     this.chaseAlertCooldown = Math.max(0, this.chaseAlertCooldown - delta);
 
-    const px = player.position.x;
-    const pz = player.position.z;
+    const px = targetPlayer.position.x;
+    const pz = targetPlayer.position.z;
     const dx = px - ZONE_CENTER.x;
     const dz = pz - ZONE_CENTER.z;
     const distPlayerFromGarden = Math.hypot(dx, dz);

@@ -129,20 +129,20 @@ export class GardenModuleV2 implements IModule {
     tickGardenGrowth(delta, gameState.friendPlots);
     tickFriendGardenRegrowth(delta);
     const nearFriendGarden = this.player
-      ? Math.hypot(this.player.position.x - (-18), this.player.position.z - (-2)) < 22
+      ? (this.player.position.x - (-18)) ** 2 + (this.player.position.z - (-2)) ** 2 < 22 * 22
       : true;
 
     if (this.scene) {
       if (nearFriendGarden) {
         // Keep chaser motion continuous near the player to avoid periodic hitching.
         this.chaserUpdateAccum = 0;
-        this.chaser.update(this.scene, Math.min(delta, 1 / 30), this.elapsedSec);
+        this.chaser.update(this.scene, Math.min(delta, 1 / 30), this.elapsedSec, this.player);
       } else {
         this.chaserUpdateAccum += delta;
         if (this.chaserUpdateAccum >= 1 / 6) {
           const step = Math.min(this.chaserUpdateAccum, 0.1);
           this.chaserUpdateAccum = 0;
-          this.chaser.update(this.scene, step, this.elapsedSec);
+          this.chaser.update(this.scene, step, this.elapsedSec, this.player);
         }
       }
     }
@@ -275,10 +275,12 @@ export class GardenModuleV2 implements IModule {
 
   private updateFriendActionButtons(): void {
     if (!this.player) return;
+    const px = this.player.position.x;
+    const pz = this.player.position.z;
     for (let i = 0; i < this.friendHandles.length; i++) {
       const h = this.friendHandles[i]!;
       const plot = gameState.friendPlots[i];
-      const near = Math.hypot(this.player.position.x - h.root.position.x, this.player.position.z - h.root.position.z) < 4.2;
+      const near = (px - h.root.position.x) ** 2 + (pz - h.root.position.z) ** 2 < 4.2 * 4.2;
       const show = Boolean(plot && plot.stage === 4 && near);
       const widgets = this.friendActionWidgets[i];
       const bless = widgets?.bless;

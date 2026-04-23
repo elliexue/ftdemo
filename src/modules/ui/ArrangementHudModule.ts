@@ -17,11 +17,13 @@ export class ArrangementHudModule implements IModule {
 
   private root: HTMLDivElement | null = null;
   private scene: THREE.Scene | null = null;
+  private player: THREE.Object3D | null = null;
   private uiClickBound = false;
   private nearStation = false;
 
   init(scene: THREE.Scene): void {
     this.scene = scene;
+    this.player = scene.getObjectByName('Player') ?? null;
     this.mount();
     subscribeGameState(() => this.refresh());
     this.wireButtons();
@@ -29,7 +31,10 @@ export class ArrangementHudModule implements IModule {
   }
 
   update(_delta: number): void {
-    const player = this.scene?.getObjectByName('Player');
+    if (!this.player && this.scene) {
+      this.player = this.scene.getObjectByName('Player') ?? null;
+    }
+    const player = this.player;
     if (!player) return;
     const dx = player.position.x - ARRANGEMENT_STATION_CENTER_XZ.x;
     const dz = player.position.z - ARRANGEMENT_STATION_CENTER_XZ.z;
